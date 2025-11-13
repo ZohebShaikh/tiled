@@ -274,6 +274,7 @@ properties:
         audience: str,
         client_id: str,
         well_known_uri: str,
+        scopes: List[str],
         device_flow_client_id: str,
         confirmation_message: str = "",
     ):
@@ -284,6 +285,7 @@ properties:
             well_known_uri=well_known_uri,
             confirmation_message=confirmation_message,
         )
+        self.scopes = scopes
         self.device_flow_client_id = device_flow_client_id
         self._oidc_bearer = OAuth2AuthorizationCodeBearer(
             authorizationUrl=str(self.authorization_endpoint),
