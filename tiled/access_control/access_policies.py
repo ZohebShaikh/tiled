@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -428,7 +428,7 @@ class Input(BaseModel):
 
 
 class Decision(BaseModel):
-    result: List[str] | bool
+    result: Union[List[str], bool]
 
 
 class ExternalPolicyDecisionPoint(AccessPolicy):
