@@ -12,7 +12,7 @@ from ..server.schemas import Principal, PrincipalType
 from ..type_aliases import AccessBlob, AccessTags, Filters, Scopes
 from ..utils import Sentinel, import_object
 from .protocols import AccessPolicy
-from .scopes import ALL_SCOPES, PUBLIC_SCOPES
+from .scopes import ALL_SCOPES, NO_SCOPES, PUBLIC_SCOPES
 
 ALL_ACCESS = Sentinel("ALL_ACCESS")
 NO_ACCESS = Sentinel("NO_ACCESS")
@@ -428,11 +428,7 @@ class Input(BaseModel):
 
 
 class Decision(BaseModel):
-    result: Any
-
-
-class Result(BaseModel):
-    tags: List[str]
+    result: List[str] | bool
 
 
 class ExternalPolicyDecisionPoint(AccessPolicy):
@@ -561,7 +557,10 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
             )
         response.raise_for_status()
         result = Decision.model_validate_json(response.text).result
-        queries.append(query_filter(tags=result, user_id=None))
+        if isinstance(result, List):
+            queries.append(query_filter(tags=result, user_id=None))
+        else:
+            return NO_ACCESS
         return queries
 
     async def allowed_scopes(
@@ -584,4 +583,8 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
                 content=input.model_dump_json(exclude_none=True),
             )
         response.raise_for_status()
-        return Decision.model_validate_json(response.text).result
+        result = Decision.model_validate_json(response.text).result
+        if isinstance(result, List):
+            return set(result)
+        else:
+            return NO_SCOPES

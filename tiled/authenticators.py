@@ -263,6 +263,14 @@ properties:
     type: string
   well_known_uri:
     type: string
+  scopes:
+    type: array
+    items:
+      type: string
+    description: |
+      Optional list of OAuth2 scopes to request. If provided, authorization
+      should be enforced by an external policy agent (for example ExternalPolicyDecisionPoint)
+      rather than by this authenticator.
   device_flow_client_id:
     type: string
   confirmation_message:
@@ -274,7 +282,7 @@ properties:
         audience: str,
         client_id: str,
         well_known_uri: str,
-        scopes: List[str],
+        scopes: Optional[List[str]],
         device_flow_client_id: str,
         confirmation_message: str = "",
     ):

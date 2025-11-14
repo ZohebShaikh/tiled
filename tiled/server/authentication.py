@@ -415,7 +415,10 @@ async def check_scopes(
     scopes: set[str] = Depends(get_current_scopes),
     settings: Settings = Depends(get_settings),
 ) -> None:
-    if isinstance(settings.authenticator, ProxiedOIDCAuthenticator):
+    if (
+        isinstance(settings.authenticator, ProxiedOIDCAuthenticator)
+        and settings.authenticator.scopes
+    ):
         if not set(settings.authenticator.scopes).issubset(scopes):
             raise HTTPException(
                 status_code=HTTP_401_UNAUTHORIZED,
