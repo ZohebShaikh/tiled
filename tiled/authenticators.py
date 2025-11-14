@@ -282,8 +282,8 @@ properties:
         audience: str,
         client_id: str,
         well_known_uri: str,
-        scopes: Optional[List[str]],
         device_flow_client_id: str,
+        scopes: Optional[List[str]] = None,
         confirmation_message: str = "",
     ):
         super().__init__(

@@ -1,10 +1,10 @@
 import logging
 import os
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 from urllib.parse import urljoin, urlsplit
 
 import httpx
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, ValidationError
 
 from ..adapters.protocols import BaseAdapter
 from ..queries import AccessBlobFilter
@@ -439,26 +439,24 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
         filter_nodes: str,
         scopes_access: str,
         audience: str,
-        attribute: Optional[str],
         provider: Optional[str] = None,
     ):
         self.authorization_provider = authorization_provider
 
-        self.node_access = urljoin(
+        self._node_access = urljoin(
             str(self.authorization_provider),
             urlsplit(node_access).path,
         )
-        self.filter_nodes = urljoin(
+        self._filter_nodes = urljoin(
             str(self.authorization_provider),
             urlsplit(filter_nodes).path,
         )
-        self.scopes_access = urljoin(
+        self._scopes_access = urljoin(
             str(self.authorization_provider),
             urlsplit(scopes_access).path,
         )
 
         self.audience = audience
-        self.attribute = attribute
         self.provider = provider
 
     def _identifier(self, principal) -> str:
@@ -496,7 +494,7 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
         )
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                str(self.node_access), content=input.model_dump_json(exclude_none=True)
+                str(self._node_access), content=input.model_dump_json(exclude_none=True)
             )
         response.raise_for_status()
         decision = Decision.model_validate_json(response.text)
@@ -526,7 +524,7 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
         )
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                str(self.node_access), content=input.model_dump_json(exclude_none=True)
+                str(self._node_access), content=input.model_dump_json(exclude_none=True)
             )
         response.raise_for_status()
         decision = Decision.model_validate_json(response.text)
@@ -553,14 +551,13 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
         )
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                str(self.filter_nodes), content=input.model_dump_json(exclude_none=True)
+                str(self._filter_nodes),
+                content=input.model_dump_json(exclude_none=True),
             )
         response.raise_for_status()
         result = Decision.model_validate_json(response.text).result
         if isinstance(result, List):
             queries.append(query_filter(tags=result, user_id=None))
-        else:
-            return NO_ACCESS
         return queries
 
     async def allowed_scopes(
@@ -570,20 +567,25 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
         authn_access_tags: Optional[AccessTags],
         authn_scopes: Scopes,
     ) -> Scopes:
+        access_blob = node.access_blob if hasattr(node, "access_blob") else None
+
         input = Input(
             input=Data(
                 token=self._identifier(principal),
                 audience=self.audience,
-                access_blob=node.access_blob,
+                access_blob=access_blob,
             )
         )
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                str(self.scopes_access),
+                str(self._scopes_access),
                 content=input.model_dump_json(exclude_none=True),
             )
         response.raise_for_status()
-        result = Decision.model_validate_json(response.text).result
+        try:
+            result = Decision.model_validate_json(response.text).result
+        except ValidationError:
+            return NO_SCOPES
         if isinstance(result, List):
             return set(result)
         else:
