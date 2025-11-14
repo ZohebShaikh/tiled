@@ -1,19 +1,15 @@
-import math
 import uuid
 from unittest.mock import MagicMock
 
-import numpy
 import pytest
 import respx
 from httpx import Response
 from pydantic import HttpUrl, SecretStr
 
 from tiled.access_control.scopes import NO_SCOPES
-from tiled.adapters.array import ArrayAdapter
-from tiled.adapters.mapping import MapAdapter
 from tiled.queries import AccessBlobFilter
 
-from ..access_control.access_policies import NO_ACCESS, ExternalPolicyDecisionPoint
+from ..access_control.access_policies import ExternalPolicyDecisionPoint
 from ..server.schemas import Principal, PrincipalType
 
 
