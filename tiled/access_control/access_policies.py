@@ -468,7 +468,7 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
         decision_endpoint: str,
         principal: Principal,
         access_blob: Optional[AccessBlob] = None,
-    ) -> Optional[List[str] | bool]:
+    ) -> Optional[Union[List[str], bool]]:
         input = Input(
             input=Data(
                 token=self._identifier(principal),
