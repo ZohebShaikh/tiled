@@ -36,66 +36,78 @@ def principal() -> Principal:
 
 @pytest.mark.asyncio
 @respx.mock
-@pytest.mark.parametrize("result", [True, False])
-async def test_node_access(
-    result: bool, external_policy: ExternalPolicyDecisionPoint, principal: Principal
+async def test_node_access_allowed(
+    external_policy: ExternalPolicyDecisionPoint, principal: Principal
 ):
     respx.post(external_policy._node_access).mock(
-        return_value=Response(200, json={"result": result})
+        return_value=Response(200, json={"result": True})
     )
-    if result:
-        assert await external_policy.init_node(
-            principal=principal,
-            authn_access_tags=set(),
-            authn_scopes=set([]),
-            access_blob={"tags": {"beamline_x_user"}},
-        ) == (True, {"tags": {"beamline_x_user"}})
-    else:
-        with pytest.raises(
-            ValueError, match="Permission denied not able to add the node"
-        ):
-            await external_policy.init_node(
-                principal=principal,
-                authn_access_tags=set(),
-                authn_scopes=set([]),
-                access_blob={"tags": {"beamline_x_user"}},
-            )
+    assert await external_policy.init_node(
+        principal=principal,
+        authn_access_tags=set(),
+        authn_scopes=set([]),
+        access_blob={"tags": {"beamline_x_user"}},
+    ) == (True, {"tags": {"beamline_x_user"}})
 
 
 @pytest.mark.asyncio
 @respx.mock
-@pytest.mark.parametrize("result", [True, False])
-async def test_node_modify(
-    result: bool, external_policy: ExternalPolicyDecisionPoint, principal: Principal
+async def test_node_access_denied(
+    external_policy: ExternalPolicyDecisionPoint, principal: Principal
+):
+    respx.post(external_policy._node_access).mock(
+        return_value=Response(200, json={"result": False})
+    )
+    with pytest.raises(ValueError, match="Permission denied not able to add the node"):
+        await external_policy.init_node(
+            principal=principal,
+            authn_access_tags=set(),
+            authn_scopes=set([]),
+            access_blob={"tags": {"beamline_x_user"}},
+        )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_node_modify_allowed(
+    external_policy: ExternalPolicyDecisionPoint, principal: Principal
 ):
     node = MagicMock()
     node.access_blob = None
     respx.post(external_policy._node_access).mock(
-        return_value=Response(200, json={"result": result})
+        return_value=Response(200, json={"result": True})
     )
-    if result:
-        assert await external_policy.modify_node(
+    assert await external_policy.modify_node(
+        node=node,
+        principal=principal,
+        authn_access_tags=set(),
+        authn_scopes=set([]),
+        access_blob={"tags": {"beamline_x_user"}},
+    ) == (True, {"tags": {"beamline_x_user"}})
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_node_modify_denied(
+    external_policy: ExternalPolicyDecisionPoint, principal: Principal
+):
+    node = MagicMock()
+    node.access_blob = None
+    respx.post(external_policy._node_access).mock(
+        return_value=Response(200, json={"result": False})
+    )
+    with pytest.raises(ValueError, match="Permission denied not able to add the node"):
+        await external_policy.modify_node(
             node=node,
             principal=principal,
             authn_access_tags=set(),
             authn_scopes=set([]),
             access_blob={"tags": {"beamline_x_user"}},
-        ) == (True, {"tags": {"beamline_x_user"}})
-    else:
-        with pytest.raises(
-            ValueError, match="Permission denied not able to add the node"
-        ):
-            await external_policy.modify_node(
-                node=node,
-                principal=principal,
-                authn_access_tags=set(),
-                authn_scopes=set([]),
-                access_blob={"tags": {"beamline_x_user"}},
-            )
+        )
 
 
 @pytest.mark.asyncio
-async def test_node_modify_not_modified(
+async def test_node_modify_with_same_not_modified(
     external_policy: ExternalPolicyDecisionPoint, principal: Principal
 ):
     node = MagicMock()
@@ -147,7 +159,12 @@ async def test_allowed_scopes(
     )
     assert allowed_scopes == set(output["result"])
 
-    # NO_SCOPES If invalid response
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_allowed_scopes_return_no_scopes_if_invalid_response(
+    external_policy: ExternalPolicyDecisionPoint, principal: Principal
+):
     respx.post(external_policy._scopes_access).mock(
         return_value=Response(200, json={"result": True})
     )
@@ -160,7 +177,12 @@ async def test_allowed_scopes(
     )
     assert allowed_scopes == NO_SCOPES
 
-    # NO_SCOPES If validation_error
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_allowed_scopes_return_no_scopes_if_validation_error(
+    external_policy: ExternalPolicyDecisionPoint, principal: Principal
+):
     respx.post(external_policy._scopes_access).mock(
         return_value=Response(200, json=True)
     )
@@ -174,7 +196,9 @@ async def test_allowed_scopes(
     assert allowed_scopes == NO_SCOPES
 
 
-def test_identifier_method(external_policy: ExternalPolicyDecisionPoint):
+def test_identifier_method_for_external_principal_with_no_access_token(
+    external_policy: ExternalPolicyDecisionPoint,
+):
     principal = Principal(
         type=PrincipalType.external,
         identities=[],
@@ -187,6 +211,10 @@ def test_identifier_method(external_policy: ExternalPolicyDecisionPoint):
     ):
         external_policy._identifier(principal)
 
+
+def test_identifier_method_for_external_principal(
+    external_policy: ExternalPolicyDecisionPoint,
+):
     principal = Principal(
         type=PrincipalType.external,
         identities=[],
@@ -196,6 +224,10 @@ def test_identifier_method(external_policy: ExternalPolicyDecisionPoint):
 
     assert external_policy._identifier(principal) == "token123"
 
+
+def test_identifier_method_for_service_principal(
+    external_policy: ExternalPolicyDecisionPoint,
+):
     principal_uuid = uuid.uuid4()
     principal = Principal(
         type=PrincipalType.service,

@@ -441,25 +441,52 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
         audience: str,
         provider: Optional[str] = None,
     ):
-        self.authorization_provider = authorization_provider
-
-        self._node_access = urljoin(
-            str(self.authorization_provider),
-            urlsplit(node_access).path,
+        self._node_access = str(
+            urljoin(
+                str(authorization_provider),
+                urlsplit(node_access).path,
+            )
         )
-        self._filter_nodes = urljoin(
-            str(self.authorization_provider),
-            urlsplit(filter_nodes).path,
+        self._filter_nodes = str(
+            urljoin(
+                str(authorization_provider),
+                urlsplit(filter_nodes).path,
+            )
         )
-        self._scopes_access = urljoin(
-            str(self.authorization_provider),
-            urlsplit(scopes_access).path,
+        self._scopes_access = str(
+            urljoin(
+                str(authorization_provider),
+                urlsplit(scopes_access).path,
+            )
         )
 
-        self.audience = audience
-        self.provider = provider
+        self._audience = audience
+        self._provider = provider
 
-    def _identifier(self, principal) -> str:
+    async def _get_external_decision(
+        self,
+        decision_endpoint: str,
+        principal: Principal,
+        access_blob: Optional[AccessBlob] = None,
+    ) -> Optional[List[str] | bool]:
+        input = Input(
+            input=Data(
+                token=self._identifier(principal),
+                audience=self._audience,
+                access_blob=access_blob,
+            )
+        )
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                decision_endpoint, content=input.model_dump_json(exclude_none=True)
+            )
+        response.raise_for_status()
+        try:
+            return Decision.model_validate_json(response.text).result
+        except ValidationError:
+            return None
+
+    def _identifier(self, principal: Principal) -> str:
         if principal.type == PrincipalType.service:
             return str(principal.uuid)
         elif principal.type == PrincipalType.external:
@@ -470,11 +497,11 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
             return principal.access_token.get_secret_value()
         else:
             for identity in principal.identities:
-                if identity.provider == self.provider:
+                if identity.provider == self._provider:
                     return identity.id
             else:
                 raise ValueError(
-                    f"Principal {principal} has no identity from provider {self.provider}."
+                    f"Principal {principal} has no identity from provider {self._provider}."
                     f"The Principal's identities are: {principal.identities}"
                 )
 
@@ -485,20 +512,10 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
         authn_scopes: Scopes,
         access_blob: Optional[AccessBlob] = None,
     ) -> Tuple[bool, Optional[AccessBlob]]:
-        input = Input(
-            input=Data(
-                token=self._identifier(principal),
-                audience=self.audience,
-                access_blob=access_blob,
-            )
+        decision = await self._get_external_decision(
+            self._node_access, principal, access_blob
         )
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                str(self._node_access), content=input.model_dump_json(exclude_none=True)
-            )
-        response.raise_for_status()
-        decision = Decision.model_validate_json(response.text)
-        if not decision.result:
+        if not decision:
             raise ValueError("Permission denied not able to add the node")
         return (True, access_blob)
 
@@ -515,20 +532,10 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
                 f"Node access_blob not modified; access_blob is identical: {access_blob}"
             )
             return (False, node.access_blob)
-        input = Input(
-            input=Data(
-                token=self._identifier(principal),
-                audience=self.audience,
-                access_blob=access_blob,
-            )
+        decision = await self._get_external_decision(
+            self._node_access, principal, access_blob
         )
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                str(self._node_access), content=input.model_dump_json(exclude_none=True)
-            )
-        response.raise_for_status()
-        decision = Decision.model_validate_json(response.text)
-        if not decision.result:
+        if not decision:
             raise ValueError("Permission denied not able to add the node")
         return (True, access_blob)
 
@@ -542,20 +549,7 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
     ) -> Filters:
         queries = []
         query_filter = AccessBlobFilter
-        input = Input(
-            input=Data(
-                token=self._identifier(principal),
-                audience=self.audience,
-                access_blob=None,
-            )
-        )
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                str(self._filter_nodes),
-                content=input.model_dump_json(exclude_none=True),
-            )
-        response.raise_for_status()
-        result = Decision.model_validate_json(response.text).result
+        result = await self._get_external_decision(self._filter_nodes, principal)
         if isinstance(result, List):
             queries.append(query_filter(tags=result, user_id=None))
         return queries
@@ -568,25 +562,10 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
         authn_scopes: Scopes,
     ) -> Scopes:
         access_blob = node.access_blob if hasattr(node, "access_blob") else None
-
-        input = Input(
-            input=Data(
-                token=self._identifier(principal),
-                audience=self.audience,
-                access_blob=access_blob,
-            )
+        scopes = await self._get_external_decision(
+            self._scopes_access, principal, access_blob
         )
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                str(self._scopes_access),
-                content=input.model_dump_json(exclude_none=True),
-            )
-        response.raise_for_status()
-        try:
-            result = Decision.model_validate_json(response.text).result
-        except ValidationError:
-            return NO_SCOPES
-        if isinstance(result, List):
-            return set(result)
+        if isinstance(scopes, List):
+            return set(scopes)
         else:
             return NO_SCOPES

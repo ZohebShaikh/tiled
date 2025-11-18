@@ -1,13 +1,12 @@
 package rbac
 
 import data.token
-import rego.v1
 
 public_tag := {"public"}
 
 admin_tag := "facility_admin"
 tag_permissions := {
-	"facility_user": [
+	"beamline_y_user": [
 		"read:data",
 		"read:metadata",
 	],
@@ -35,7 +34,7 @@ tag_permissions := {
 
 users := {
 	"alice": {"tags": ["beamline_x_user"]},
-	"bob": {"tags": ["facility_user"]},
+	"bob": {"tags": ["beamline_y_user"]},
 	"cara": {"tags": [admin_tag]},
 	"admin": {"tags": [admin_tag, "beamline_x_user"]},
 }

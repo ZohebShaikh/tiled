@@ -1,7 +1,6 @@
 package rbac_test
 
 import data.rbac
-import rego.v1
 
 admin_tag := "facility_admin"
 
