@@ -441,6 +441,32 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
         audience: str,
         provider: Optional[str] = None,
     ):
+        """
+        Initialize an access policy configuration.
+
+        Parameters
+        ----------
+        authorization_provider : HttpUrl
+            The base URL of the authorization provider.
+        node_access : str
+            The endpoint path for node access validation. Will be joined with the
+            authorization_provider base URL.
+        filter_nodes : str
+            The endpoint path for filtering nodes. Will be joined with the
+            authorization_provider base URL.
+        scopes_access : str
+            The endpoint path for scopes access validation. Will be joined with the
+            authorization_provider base URL.
+        audience : str
+            The intended audience for the authorization tokens.
+        provider : Optional[str], optional
+            The name of the authorization provider, by default None.
+
+        Notes
+        -----
+        The endpoint paths are combined with the authorization_provider URL using
+        urljoin, extracting only the path component from each endpoint parameter.
+        """
         self._node_access = str(
             urljoin(
                 str(authorization_provider),
