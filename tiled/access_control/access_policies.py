@@ -1,7 +1,6 @@
 import logging
 import os
 from typing import List, Optional, Tuple, Union
-from urllib.parse import urljoin, urlsplit
 
 import httpx
 from pydantic import BaseModel, HttpUrl, ValidationError
@@ -467,25 +466,9 @@ class ExternalPolicyDecisionPoint(AccessPolicy):
         The endpoint paths are combined with the authorization_provider URL using
         urljoin, extracting only the path component from each endpoint parameter.
         """
-        self._node_access = str(
-            urljoin(
-                str(authorization_provider),
-                urlsplit(node_access).path,
-            )
-        )
-        self._filter_nodes = str(
-            urljoin(
-                str(authorization_provider),
-                urlsplit(filter_nodes).path,
-            )
-        )
-        self._scopes_access = str(
-            urljoin(
-                str(authorization_provider),
-                urlsplit(scopes_access).path,
-            )
-        )
-
+        self._node_access = str(authorization_provider) + node_access
+        self._filter_nodes = str(authorization_provider) + filter_nodes
+        self._scopes_access = str(authorization_provider) + scopes_access
         self._audience = audience
         self._provider = provider
 
