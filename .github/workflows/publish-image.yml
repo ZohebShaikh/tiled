@@ -91,4 +91,4 @@ jobs:
       - name: Publish Helm chart
         if: github.ref_type == 'tag'
         run: |
-          helm push /tmp/tiled-${{ steps.meta.outputs.version }}.tgz oci://ghcr.io/bluesky/charts
+          helm push /tmp/tiled-${{ steps.meta.outputs.version }}.tgz oci://ghcr.io/ZohebShaikh/tiled/charts
