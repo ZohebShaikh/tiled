@@ -435,6 +435,7 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
         scopes_endpoint: str,
         modify_node_endpoint: Optional[str] = None,
         provider: Optional[str] = None,
+        empty_access_blob_public: bool = False,
     ):
         """
         Initialize an access policy configuration.
@@ -459,6 +460,7 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
         self._modify_node = str(authorization_provider) + (modify_node_endpoint or create_node_endpoint)
         self._user_tags = str(authorization_provider) + allowed_tags_endpoint
         self._node_scopes = str(authorization_provider) + scopes_endpoint
+        self._empty_access_blob_public = empty_access_blob_public
         self._provider = provider
 
     @abstractmethod
@@ -494,6 +496,8 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
         authn_scopes: Scopes,
         access_blob: Optional[AccessBlob] = None,
     ) -> Tuple[bool, Optional[AccessBlob]]:
+        if access_blob is None:
+            return self._empty_access_blob_public, access_blob
         decision = await self._get_external_decision(
             self._create_node,
             self.build_input(principal, authn_access_tags, authn_scopes, access_blob),
