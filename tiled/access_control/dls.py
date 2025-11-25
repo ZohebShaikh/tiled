@@ -1,6 +1,5 @@
 
-import os
-from pydantic import HttpUrl, Secret
+from pydantic import HttpUrl
 from tiled.access_control.access_policies import ExternalPolicyDecisionPoint, ResultHolder
 from typing import Any, Optional
 
@@ -30,13 +29,12 @@ class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
         empty_access_blob_public: bool = False,
     ):
         self._token_audience = token_audience
-        self._blueapi_secret_key: Secret[str] = Secret(os.environ['BLUEAPI_SECRET_KEY']),
 
         super().__init__(
             authorization_provider,
-            "diamond.policy.session.write_to_beamline_visit",
-            "diamond.policy.session.user_sessions",  # TODO: New endpoint
-            "diamond.policy.token.verified",
+            "session/write_to_beamline_visit",
+            "session/user_sessions",  # TODO: New endpoint
+            "token/claims",
             provider,
             empty_access_blob_public
         )
