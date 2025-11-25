@@ -1,11 +1,10 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 import logging
 import os
-from typing import Generic, Optional, Tuple, TypeVar, Union
+from typing import Generic, Optional, Tuple, TypeVar
 
 import httpx
-from pydantic import BaseModel, HttpUrl, ValidationError
+from pydantic import BaseModel, HttpUrl, TypeAdapter, ValidationError
 
 from ..adapters.protocols import BaseAdapter
 from ..queries import AccessBlobFilter
@@ -418,7 +417,6 @@ class TagBasedAccessPolicy(AccessPolicy):
         return queries
 
 
-D = TypeVar("D", bound=BaseModel)
 T = TypeVar("T")
 
 
@@ -477,15 +475,15 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
         self,
         decision_endpoint: str,
         input: str,
-        decision_type: type[D],
-    ) -> Optional[D]:
+        decision_type: type[T],
+    ) -> Optional[T]:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 decision_endpoint, content=input
             )
         response.raise_for_status()
         try:
-            return decision_type.model_validate_json(response.text)
+            return TypeAdapter(decision_type).validate_json(response.text)
         except ValidationError:
             return None
 
