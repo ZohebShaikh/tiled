@@ -11,9 +11,6 @@ from ..server.schemas import Principal, PrincipalType
 from ..type_aliases import AccessBlob, AccessTags, Scopes
 
 
-class OpenPolicyAgentVerified:
-    result: tuple[dict[str, Any], dict[str, Any]]
-
 class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
     READ_SCOPES: set[str] = PUBLIC_SCOPES
     WRITE_SCOPES: set[str] = frozenset(
@@ -73,11 +70,11 @@ class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
         scopes = await self._get_external_decision(
             self._node_scopes,
             self.build_input(principal, authn_access_tags, authn_scopes, getattr(node, "access_blob", None)),
-            ResultHolder[bool],
+            ResultHolder[dict[str, Any]],
         )
         if scopes and scopes.result:
             return_scopes = set(self.READ_SCOPES)
-            if "azp" in scopes.result[1] and str(scopes.result[1]["azp"]).endswith("-blueapi"):
+            if "azp" in scopes.result and str(scopes.result["azp"]).endswith("-blueapi"):
                 return_scopes |= self.WRITE_SCOPES
             return return_scopes
         return NO_SCOPES
