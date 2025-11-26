@@ -245,7 +245,7 @@ server = [
     "jinja2",
     "jmespath",
     "lz4",
-    "minio",
+    "minio==7.2.18",
     "ndindex",
     "numba >=0.59.0",  # indirect, pinned to assist uv solve
     "numcodecs",
