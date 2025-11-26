@@ -75,7 +75,7 @@ class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
     ) -> Scopes:
         scopes = await self._get_external_decision(
             self._node_scopes,
-            self.build_input(principal, authn_access_tags, authn_scopes, getattr(node, "access_blob", None)),
+            self.build_input(principal, authn_access_tags, authn_scopes),
             ResultHolder[dict[str, Any]],
         )
         if scopes and scopes.result:
