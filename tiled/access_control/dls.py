@@ -1,4 +1,5 @@
 
+import json
 from pydantic import HttpUrl, TypeAdapter
 from tiled.access_control.access_policies import ExternalPolicyDecisionPoint, ResultHolder
 from typing import Any, Optional, TypedDict
@@ -58,9 +59,9 @@ class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
             raise ValueError(
                 "Access token not provided for external principal type"
             )
-        blob = {} if access_blob is None else self._type_adapter.validate_json(access_blob["tags"][0])
+        blob = self._type_adapter.validate_json(access_blob["tags"][0]) if access_blob else {}
 
-        return str({
+        return json.dumps({
             **blob,
             "token": principal.access_token.get_secret_value(),
             "audience": self._token_audience,
