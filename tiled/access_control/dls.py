@@ -1,5 +1,6 @@
 
 import json
+import logging
 from pydantic import HttpUrl, TypeAdapter
 from tiled.access_control.access_policies import ExternalPolicyDecisionPoint, ResultHolder
 from typing import Any, Optional, TypedDict
@@ -9,6 +10,9 @@ from tiled.adapters.protocols import BaseAdapter
 
 from ..server.schemas import Principal, PrincipalType
 from ..type_aliases import AccessBlob, AccessTags, Scopes
+
+
+logger = logging.getLogger(__name__)
 
 
 class AccessBlob(TypedDict):
@@ -74,11 +78,14 @@ class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
         authn_access_tags: Optional[AccessTags],
         authn_scopes: Scopes,
     ) -> Scopes:
+        logger.warning(self._node_scopes)
+        logger.warning(self.build_input(principal, authn_access_tags, authn_scopes))
         scopes = await self._get_external_decision(
             self._node_scopes,
             self.build_input(principal, authn_access_tags, authn_scopes),
             ResultHolder[dict[str, Any]],
         )
+        logger.warning(scopes)
         if scopes and scopes.result:
             return_scopes = set(self.READ_SCOPES)
             if "azp" in scopes.result and str(scopes.result["azp"]).endswith("-blueapi"):
