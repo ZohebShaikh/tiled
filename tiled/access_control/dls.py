@@ -65,10 +65,12 @@ class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
             )
         blob = self._type_adapter.validate_json(access_blob["tags"][0]) if access_blob else {}
 
-        return json.dumps({
-            **blob,
-            "token": principal.access_token.get_secret_value(),
-            "audience": self._token_audience,
+        return json.dumps({"input":
+            {
+                **blob,
+                "token": principal.access_token.get_secret_value(),
+                "audience": self._token_audience,
+            }
         })
 
     async def allowed_scopes(
