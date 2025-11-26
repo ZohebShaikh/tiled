@@ -483,6 +483,7 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
             )
         response.raise_for_status()
         try:
+            logger.warning(response.text)
             return TypeAdapter(decision_type).validate_json(response.text)
         except ValidationError:
             return None
