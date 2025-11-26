@@ -1,13 +1,18 @@
 
-from pydantic import HttpUrl
+from pydantic import HttpUrl, TypeAdapter
 from tiled.access_control.access_policies import ExternalPolicyDecisionPoint, ResultHolder
-from typing import Any, Optional
+from typing import Any, Optional, TypedDict
 
 from tiled.access_control.scopes import NO_SCOPES, PUBLIC_SCOPES
 from tiled.adapters.protocols import BaseAdapter
 
 from ..server.schemas import Principal, PrincipalType
 from ..type_aliases import AccessBlob, AccessTags, Scopes
+
+
+class AccessBlob(TypedDict):
+    proposal: int
+    visit: int
 
 
 class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
@@ -29,6 +34,7 @@ class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
         empty_access_blob_public: bool = False,
     ):
         self._token_audience = token_audience
+        self._type_adapter = TypeAdapter(AccessBlob)
 
         super().__init__(
             authorization_provider,
@@ -52,8 +58,10 @@ class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
             raise ValueError(
                 "Access token not provided for external principal type"
             )
+        blob = {} if access_blob is None else self._type_adapter.validate_json(access_blob["tags"][0])
+
         return str({
-            **access_blob,
+            **blob,
             "token": principal.access_token.get_secret_value(),
             "audience": self._token_audience,
         })
