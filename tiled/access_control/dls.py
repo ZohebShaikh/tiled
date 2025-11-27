@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 class AccessBlob(TypedDict):
     proposal: int
     visit: int
+    beamline: str
 
 
 class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
