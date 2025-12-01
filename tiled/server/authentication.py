@@ -112,7 +112,7 @@ class StrictAPIKeyHeader(APIKeyHeader):
         api_key: Optional[str] = request.headers.get(self.model.name)
         scheme, param = get_authorization_scheme_param(api_key)
         if not scheme or scheme.lower() == "bearer":
-            return self.check_api_key(None, auto_error=False)
+            return self.check_api_key(None)
         if scheme.lower() != self.scheme_name.lower():
             raise HTTPException(
                 status_code=HTTP_400_BAD_REQUEST,
@@ -122,7 +122,7 @@ class StrictAPIKeyHeader(APIKeyHeader):
                     "'Bearer SECRET' or 'Apikey SECRET'. "
                 ),
             )
-        return self.check_api_key(param, auto_error=False)
+        return self.check_api_key(param)
 
 
 # The tokenUrl below is patched at app startup when we know it.
