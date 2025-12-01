@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 class DiamondAccessBlob(TypedDict):
-    proposal: int
-    visit: int
+    proposal_number: int
+    visit_number: int
     beamline: str
 
 
