@@ -3,6 +3,16 @@ Write the date in place of the "Unreleased" in the case a new version is release
 
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Add ExternalPolicyDecisionPoint for authorization and an example with Open Policy Agent
+
+### Fixed
+
+- Made provision for forks of the repository to publish Helm charts.
+
 ## v0.2.2 (2025-11-25)
 
 ### Changed
