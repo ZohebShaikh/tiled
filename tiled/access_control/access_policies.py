@@ -481,7 +481,7 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
     ) -> Optional[T]:
         logger.debug(f"Requesting auth {decision_endpoint=} for {input=}")
         async with httpx.AsyncClient() as client:
-            response = await client.post(decision_endpoint, content=input)
+            response = await client.post(decision_endpoint, content=input, timeout=10)
         response.raise_for_status()
         try:
             logger.debug(f"Deserialising auth {response.text=} as {decision_type=}")
