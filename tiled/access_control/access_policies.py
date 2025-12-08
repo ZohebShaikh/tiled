@@ -433,7 +433,7 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
         scopes_endpoint: str,
         modify_node_endpoint: Optional[str] = None,
         provider: Optional[str] = None,
-        empty_access_blob_public: bool = False,
+        empty_access_blob_public: Optional[bool] = None,
     ):
         """
         Initialize an access policy configuration.
@@ -444,15 +444,22 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
             The base URL of the authorization provider.
         create_node_endpoint : str
             An endpoint that returns a boolean decision on whether a use may create a node
-        modify_node_endpoint : str, optional
-            An endpoint that returns a boolean decision on whether a use may modify a node
-            Defaults to create_node_endpoint if not set
         allowed_tags_endpoint : str
             An endpoint that returns a list[str] of tags a user may view on a node
         scopes_endpoint : str
             An endpoint that returns a set[str] of scopes a user has on a node
+        modify_node_endpoint : str, optional
+            An endpoint that returns a boolean decision on whether a use may modify a node
+            Defaults to create_node_endpoint if not set
         provider : Optional[str], optional
             The name of the authorization provider, by default None.
+        empty_access_blob_public: bool, optional
+            Should a node (e.g. the root node) with no access_blob be treated as public,
+            read/writable by any request with correct scopes? Default None, which does not
+            short circuit the logic and lets the remote provider decide.
+        empty_tag_list_include_all: bool, optional, default False
+            Should an empty list of filters the unfiltered list of child nodes, rather
+            than filtering out all nodes with any tags? Default False
         """
         self._create_node = str(authorization_provider) + create_node_endpoint
         self._modify_node = str(authorization_provider) + (
@@ -496,15 +503,15 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
         authn_scopes: Scopes,
         access_blob: Optional[AccessBlob] = None,
     ) -> Tuple[bool, Optional[AccessBlob]]:
-        if access_blob is None:
+        if access_blob is None and self._empty_access_blob_public is not None:
             return self._empty_access_blob_public, access_blob
         decision = await self._get_external_decision(
             self._create_node,
             self.build_input(principal, authn_access_tags, authn_scopes, access_blob),
             ResultHolder[bool],
         )
-        if decision and decision.result:
-            return (True, access_blob)
+        if decision:
+            return (decision.result, access_blob)
         raise ValueError("Permission denied not able to add the node")
 
     async def modify_node(
@@ -525,8 +532,8 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
             self.build_input(principal, authn_access_tags, authn_scopes, access_blob),
             ResultHolder[bool],
         )
-        if decision and decision.result:
-            return (True, access_blob)
+        if decision:
+            return (decision.result, access_blob)
         raise ValueError("Permission denied not able to add the node")
 
     async def filters(
@@ -537,16 +544,15 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
         authn_scopes: Scopes,
         scopes: Scopes,
     ) -> Filters:
-        queries = []
-        query_filter = AccessBlobFilter
         tags = await self._get_external_decision(
             self._user_tags,
             self.build_input(principal, authn_access_tags, authn_scopes),
             ResultHolder[list[str]],
         )
         if tags is not None:
-            queries.append(query_filter(tags=tags.result, user_id=None))
-        return queries
+            return [AccessBlobFilter(tags=tags.result, user_id=None)]
+        else:
+            return NO_ACCESS
 
     async def allowed_scopes(
         self,

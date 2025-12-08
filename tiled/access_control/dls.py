@@ -1,8 +1,8 @@
 import json
 import logging
-from typing import Optional, TypedDict
+from typing import Optional
 
-from pydantic import HttpUrl, TypeAdapter
+from pydantic import BaseModel, Field, HttpUrl, TypeAdapter
 
 from tiled.access_control.access_policies import ExternalPolicyDecisionPoint
 
@@ -12,9 +12,9 @@ from ..type_aliases import AccessBlob, AccessTags, Scopes
 logger = logging.getLogger(__name__)
 
 
-class DiamondAccessBlob(TypedDict):
-    proposal: int
-    visit: int
+class DiamondAccessBlob(BaseModel):
+    proposal: int = Field(validation_alias="proposal_number")
+    visit: int = Field(validation_alias="visit_number")
     beamline: str
 
 
@@ -24,7 +24,6 @@ class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
         authorization_provider: HttpUrl,
         token_audience: str,
         provider: Optional[str] = None,
-        empty_access_blob_public: bool = False,
     ):
         self._token_audience = token_audience
         self._type_adapter = TypeAdapter(DiamondAccessBlob)
@@ -35,7 +34,9 @@ class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
             "session/user_sessions",
             "tiled/scopes",
             provider,
-            empty_access_blob_public,
+            empty_access_blob_public=True,
+            empty_tag_list_include_all=True,
+            no_tag_list_exclude_all=True,
         )
 
     def build_input(
@@ -45,25 +46,20 @@ class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
         authn_scopes: Scopes,
         access_blob: Optional[AccessBlob] = None,
     ) -> str:
-        if self._token_audience is None:
-            raise ValueError("Provider not set, cannot validate token audience")
-        if (
-            principal.type is not PrincipalType.external
-            or principal.access_token is None
-        ):
-            raise ValueError("Access token not provided for external principal type")
-        blob = (
-            self._type_adapter.validate_json(access_blob["tags"][0])
-            if access_blob
-            else {}
-        )
+        _input = {"audience": self._token_audience}
 
-        return json.dumps(
-            {
-                "input": {
-                    **blob,
-                    "token": principal.access_token.get_secret_value(),
-                    "audience": self._token_audience,
-                }
-            }
-        )
+        if (
+            principal.type is PrincipalType.external
+            and principal.access_token is not None
+        ):
+            _input["token"] = principal.access_token.get_secret_value()
+
+        if (
+            access_blob is not None
+            and "tags" in access_blob
+            and len(access_blob["tags"] > 0)
+        ):
+            blob = self._type_adapter.validate_json(access_blob["tags"][0])
+            _input.update(blob.model_dump())
+
+        return json.dumps({"input": _input})
