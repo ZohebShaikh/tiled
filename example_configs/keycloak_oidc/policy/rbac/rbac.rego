@@ -17,18 +17,18 @@ tag_permissions := {
 		"write:metadata",
 		"create",
 		"register",
+		"delete:revision",
+		"delete:node"
 	],
 	"beamline_x_user": [
 		"read:data",
 		"read:metadata",
+		"write:data",
+		"write:metadata",
 	],
 	"public": [
 		"read:data",
-		"write:data",
 		"read:metadata",
-		"write:metadata",
-		"create",
-		"register",
 	],
 }
 
@@ -68,7 +68,7 @@ scopes contains p if {
 
 scopes contains p if {
 	is_admin
-	some p in tag_permissions.public
+	some p in tag_permissions[admin_tag]
 }
 
 tag_valid if {

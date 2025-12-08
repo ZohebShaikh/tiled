@@ -6,7 +6,7 @@ admin_tag := "facility_admin"
 
 users := {
 	"alice": {"tags": ["beamline_x_user"]},
-	"bob": {"tags": ["facility_user"]},
+	"bob": {"tags": ["beamline_y_user"]},
 	"cara": {"tags": [admin_tag]},
 	"admin": {"tags": [admin_tag, "beamline_x_user"]},
 }
@@ -18,13 +18,13 @@ test_allowed_to_every_tag_if_admin if {
 }
 
 test_not_allowed_to_add_invalid_tags if {
-	not rbac.allow with input as {"access_blob": {"tags": ["beamline_y_user"]}}
+	not rbac.allow with input as {"access_blob": {"tags": ["z_beamline"]}}
 		with data.token as {"name": "admin"}
 		with rbac.users as users
 }
 
 test_user_allowed_to_add_user_tags if {
-	rbac.allow with input as {"access_blob": {"tags": ["facility_user"]}}
+	rbac.allow with input as {"access_blob": {"tags": ["beamline_y_user"]}}
 		with data.token as {"name": "bob"}
 		with rbac.users as users
 }
@@ -46,7 +46,7 @@ test_user_is_not_admin if {
 }
 
 test_admin_has_all_tags if {
-	rbac.tags == {"facility_user", "facility_admin", "beamline_x_user", "public"} with data.token as {"name": "admin"}
+	rbac.tags == {"facility_admin", "beamline_y_user","beamline_x_user", "public"} with data.token as {"name": "admin"}
 		with rbac.users as users
 }
 
@@ -56,7 +56,7 @@ test_beamline_user_has_only_beamline_tags if {
 }
 
 test_allowed_tags if {
-	rbac.allowed_tags = {"beamline_x_user"} with input as {"access_blob": {"tags": ["beamline_x_user"]}}
+	rbac.allowed_tags == {"beamline_x_user"} with input as {"access_blob": {"tags": ["beamline_x_user"]}}
 		with data.token as {"name": "admin"}
 		with rbac.users as users
 }
@@ -75,6 +75,8 @@ test_allowed_scopes_for_admin if {
 		"write:metadata",
 		"create",
 		"register",
+		"delete:node",
+		"delete:revision",
 	} with input as {"access_blob": {"tags": ["facility_admin"]}}
 		with data.token as {"name": "admin"}
 		with rbac.users as users
@@ -88,6 +90,8 @@ test_allowed_scopes_for_admin_for_any_resource if {
 		"write:metadata",
 		"create",
 		"register",
+		"delete:node",
+		"delete:revision",
 	} with input as {"access_blob": {"tags": ["beamline_x_user"]}}
 		with data.token as {"name": "admin"}
 		with rbac.users as users
@@ -103,6 +107,8 @@ test_allowed_scopes_for_user if {
 	rbac.scopes == {
 		"read:data",
 		"read:metadata",
+		"write:data",
+		"write:metadata"
 	} with input as {"access_blob": {"tags": ["beamline_x_user"]}}
 		with data.token as {"name": "alice"}
 		with rbac.users as users
