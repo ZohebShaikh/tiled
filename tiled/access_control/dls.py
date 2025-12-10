@@ -23,20 +23,24 @@ class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
         self,
         authorization_provider: HttpUrl,
         token_audience: str,
+        create_node_endpoint: str = "session/write_to_beamline_visit",
+        allowed_tags_endpoint: str = "tiled/user_sessions",
+        scopes_endpoint: str = "tiled/scopes",
+        modify_node_endpoint: Optional[str] = None,
+        empty_access_blob_public: bool = True,
         provider: Optional[str] = None,
     ):
         self._token_audience = token_audience
         self._type_adapter = TypeAdapter(DiamondAccessBlob)
 
         super().__init__(
-            authorization_provider,
-            "session/write_to_beamline_visit",
-            "session/user_sessions",
-            "tiled/scopes",
-            provider,
-            empty_access_blob_public=True,
-            empty_tag_list_include_all=True,
-            no_tag_list_exclude_all=True,
+            authorization_provider=authorization_provider,
+            create_node_endpoint=create_node_endpoint,
+            allowed_tags_endpoint=allowed_tags_endpoint,
+            scopes_endpoint=scopes_endpoint,
+            provider=provider,
+            modify_node_endpoint=modify_node_endpoint,
+            empty_access_blob_public=empty_access_blob_public,
         )
 
     def build_input(
