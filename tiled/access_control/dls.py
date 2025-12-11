@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Optional
 
-from pydantic import BaseModel, Field, HttpUrl, TypeAdapter
+from pydantic import BaseModel, HttpUrl, TypeAdapter
 
 from tiled.access_control.access_policies import ExternalPolicyDecisionPoint
 
@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 class DiamondAccessBlob(BaseModel):
-    proposal: int = Field(validation_alias="proposal_number")
-    visit: int = Field(validation_alias="visit_number")
+    proposal: int
+    visit: int
     beamline: str
 
 
@@ -61,7 +61,7 @@ class DiamondOpenPolicyAgentAuthorizationPolicy(ExternalPolicyDecisionPoint):
         if (
             access_blob is not None
             and "tags" in access_blob
-            and len(access_blob["tags"] > 0)
+            and len(access_blob["tags"]) > 0
         ):
             blob = self._type_adapter.validate_json(access_blob["tags"][0])
             _input.update(blob.model_dump())
