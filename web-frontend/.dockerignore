@@ -1,0 +1,8 @@
+dist
+import-sorter.json
+node_modules
+README.md
+test
+.eslintrc.json
+.prettierignore
+.prettierrc.json

@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.9
 ARG PYTHON_VERSION=3.12
 FROM docker.io/node:22-alpine AS web_frontend_build
 WORKDIR /src
