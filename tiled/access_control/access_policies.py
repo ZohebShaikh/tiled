@@ -3,7 +3,7 @@ import os
 from abc import ABC, abstractmethod
 from typing import Generic, Optional, Tuple, TypeVar
 
-import httpx
+import httpx2
 from pydantic import BaseModel, HttpUrl, TypeAdapter, ValidationError
 
 from ..adapters.protocols import BaseAdapter
@@ -483,7 +483,7 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
         decision_type: type[T],
     ) -> Optional[T]:
         logger.debug(f"Requesting auth {decision_endpoint=} for {input=}")
-        async with httpx.AsyncClient() as client:
+        async with httpx2.AsyncClient() as client:
             response = await client.post(decision_endpoint, content=input)
         response.raise_for_status()
         try:

@@ -9,7 +9,7 @@ from collections.abc import Iterable
 from datetime import timedelta
 from typing import Any, Dict, List, Mapping, Optional, cast
 
-import httpx
+import httpx2
 from cachetools import TTLCache, cached
 from fastapi import APIRouter, Request
 from fastapi.security import OAuth2, OAuth2AuthorizationCodeBearer
@@ -160,7 +160,7 @@ properties:
 
     @functools.cached_property
     def _config_from_oidc_url(self) -> dict[str, Any]:
-        response: httpx.Response = httpx.get(self._well_known_url)
+        response: httpx2.Response = httpx2.get(self._well_known_url)
         response.raise_for_status()
         return response.json()
 
@@ -188,8 +188,8 @@ properties:
         return cast(str, self._config_from_oidc_url.get("token_endpoint"))
 
     @functools.cached_property
-    def authorization_endpoint(self) -> httpx.URL:
-        return httpx.URL(
+    def authorization_endpoint(self) -> httpx2.URL:
+        return httpx2.URL(
             cast(str, self._config_from_oidc_url.get("authorization_endpoint"))
         )
 
@@ -205,7 +205,7 @@ properties:
 
     @cached(TTLCache(maxsize=1, ttl=timedelta(hours=1).total_seconds()))
     def keys(self) -> List[str]:
-        return httpx.get(self.jwks_uri).raise_for_status().json().get("keys", [])
+        return httpx2.get(self.jwks_uri).raise_for_status().json().get("keys", [])
 
     def decode_token(
         self, id_token: str, access_token: Optional[str] = None
@@ -509,7 +509,7 @@ async def exchange_code(
     client_secret: str,
     redirect_uri: str,
     extra_scopes: Optional[List[str]] = None,
-) -> httpx.Response:
+) -> httpx2.Response:
     """Exchange an authorization code for tokens at the IdP token endpoint.
 
     Explicitly requests ``openid offline_access`` scopes in the token POST body
@@ -531,7 +531,7 @@ async def exchange_code(
     if extra_scopes:
         scopes.update(extra_scopes)
     auth_value = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
-    response = httpx.post(
+    response = httpx2.post(
         url=token_uri,
         data={
             "grant_type": "authorization_code",

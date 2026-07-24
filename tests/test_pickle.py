@@ -3,7 +3,7 @@
 # We try connecting out to the demo deployment.
 import pickle
 
-import httpx
+import httpx2
 import pytest
 import uvicorn
 
@@ -31,7 +31,7 @@ def server_url():
 
 def test_pickle_context(server_url):
     try:
-        httpx.get(server_url).raise_for_status()
+        httpx2.get(server_url).raise_for_status()
     except Exception:
         raise pytest.skip(f"Could not connect to {server_url}")
     with Context.from_any_uri(server_url, api_key="secret")[0] as context:
@@ -41,7 +41,7 @@ def test_pickle_context(server_url):
 def test_pickle_context_preserves_max_connections(server_url):
     """max_connections survives a pickle/unpickle round-trip."""
     try:
-        httpx.get(server_url).raise_for_status()
+        httpx2.get(server_url).raise_for_status()
     except Exception:
         raise pytest.skip(f"Could not connect to {server_url}")
     with Context.from_any_uri(server_url, api_key="secret", max_connections=3)[
@@ -55,7 +55,7 @@ def test_pickle_context_preserves_max_connections(server_url):
 @pytest.mark.parametrize("structure_clients", ["numpy", "dask"])
 def test_pickle_clients(server_url, structure_clients, tmpdir):
     try:
-        httpx.get(server_url).raise_for_status()
+        httpx2.get(server_url).raise_for_status()
     except Exception:
         raise pytest.skip(f"Could not connect to {server_url}")
     cache = Cache(tmpdir / "http_response_cache.db")

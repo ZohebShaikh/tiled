@@ -92,9 +92,9 @@ Registering on the root (`""`) means we watch the entire catalog.  Omitting
 
 ```{code-cell} ipython3
 import json
-import httpx
+import httpx2
 
-resp = httpx.post(
+resp = httpx2.post(
     f"http://localhost:{server.port}/api/v1/webhooks/target/",
     headers={
         "Authorization": f"Apikey {server.api_key}",

@@ -40,7 +40,7 @@ For broad compatibility, it supports `gzip` compression, which is
 used in HTTP clients---supported by web browsers, command-line tools like
 [curl](https://curl.se/) or [https://httpie.io/](https://httpie.io/), and
 frameworks like [requests](https://docs.python-requests.org/),
-[httpx](https://www.python-httpx.org/), and likely any other framework currently
+[httpx2](https://httpx2.pydantic.dev), and likely any other framework currently
 maintained.
 
 However, `gzip` is slow compared to newer alternatives. Therefore, the Tiled

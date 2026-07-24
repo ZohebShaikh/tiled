@@ -10,7 +10,7 @@ import time
 from typing import Optional, Union, cast
 from urllib.parse import quote_plus, urlparse
 
-import httpx
+import httpx2
 import uvicorn
 
 from ..storage import SQLStorage, get_storage
@@ -178,7 +178,7 @@ class SimpleTiledServer:
         # in the readiness probe fails; otherwise it would leak.
         try:
             deadline = time.monotonic() + _STARTUP_TIMEOUT
-            with httpx.Client(trust_env=False) as client:
+            with httpx2.Client(trust_env=False) as client:
                 while True:
                     if not self._server.thread.is_alive():
                         raise RuntimeError(
@@ -199,7 +199,7 @@ class SimpleTiledServer:
                         )
                         if r.status_code == 200:
                             break
-                    except httpx.RequestError:
+                    except httpx2.RequestError:
                         pass
                     time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
         except BaseException:

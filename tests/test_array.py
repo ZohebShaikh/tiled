@@ -4,7 +4,7 @@ import warnings
 from pathlib import Path
 
 import dask.array
-import httpx
+import httpx2
 import numpy
 import pytest
 from starlette.status import HTTP_406_NOT_ACCEPTABLE, HTTP_422_UNPROCESSABLE_CONTENT
@@ -154,7 +154,7 @@ def test_nan_infinity_handler(tmpdir, context):
 def test_block_validation(context):
     "Verify that block is correctly specified."
     client = from_context(context, "dask")["cube"]["tiny_cube"]
-    block_url = httpx.URL(client.item["links"]["block"])
+    block_url = httpx2.URL(client.item["links"]["block"])
     # Malformed because it has only 2 dimensions, not 3.
     malformed_block_url = block_url.copy_with(params={"block": "0,0"})
     with fail_with_status_code(HTTP_422_UNPROCESSABLE_CONTENT):

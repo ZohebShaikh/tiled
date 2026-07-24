@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, Dict, Generator, List, Union
 from unittest.mock import MagicMock, patch
 
-import httpx
+import httpx2
 import pytest
 import respx
 import stamina
@@ -77,7 +77,7 @@ def mock_oidc_server(
     oidc_config: Dict[str, Any],
 ) -> MockRouter:
     respx_mock.get(well_known_url).mock(
-        return_value=httpx.Response(httpx.codes.OK, json=well_known_response)
+        return_value=httpx2.Response(httpx2.codes.OK, json=well_known_response)
     )
 
     device_flow_client_id = oidc_config["authentication"]["providers"][0]["args"][
@@ -92,8 +92,8 @@ def mock_oidc_server(
         well_known_response["device_authorization_endpoint"],
         data={"client_id": device_flow_client_id, "scope": "offline_access openid"},
     ).mock(
-        return_value=httpx.Response(
-            status_code=httpx.codes.OK,
+        return_value=httpx2.Response(
+            status_code=httpx2.codes.OK,
             json={
                 "device_code": device_code,
                 "user_code": user_code,
@@ -114,8 +114,8 @@ def mock_oidc_server(
         },
         name="token_polling",
     ).mock(
-        return_value=httpx.Response(
-            status_code=httpx.codes.OK,
+        return_value=httpx2.Response(
+            status_code=httpx2.codes.OK,
             json=tokens_response,
         )
     )
@@ -137,7 +137,7 @@ def test_about_endpoint(
     oidc_config: Dict[str, Any],
 ):
     response = context.http_client.get("/api/v1/")
-    assert response.status_code == httpx.codes.OK
+    assert response.status_code == httpx2.codes.OK
     assert response.json()["authentication"]["providers"][0]["links"] == {
         "auth_endpoint": well_known_response["device_authorization_endpoint"],
         "authorize_endpoint": f"{context.http_client.base_url}/api/v1/auth/provider/keycloak_oidc/authorize",
@@ -158,7 +158,7 @@ def test_device_flow_success(
 ):
     with patch("webbrowser.open", return_value=False):
         tokens = prompt_for_credentials(
-            httpx.Client(), context.server_info.authentication.providers
+            httpx2.Client(), context.server_info.authentication.providers
         )
 
     out, err = capsys.readouterr()
@@ -195,11 +195,11 @@ def test_device_flow_polling(
     token_polling_route = mock_oidc_server["token_polling"]
     token_polling_route.return_value = None
     token_polling_route.side_effect = [
-        httpx.Response(
-            status_code=httpx.codes.BAD_REQUEST, json={"error": "authorization_pending"}
+        httpx2.Response(
+            status_code=httpx2.codes.BAD_REQUEST, json={"error": "authorization_pending"}
         ),
-        httpx.Response(
-            status_code=httpx.codes.OK,
+        httpx2.Response(
+            status_code=httpx2.codes.OK,
             json=tokens_response,
         ),
     ]
@@ -208,7 +208,7 @@ def test_device_flow_polling(
 
     with patch("webbrowser.open", return_value=False):
         tokens = prompt_for_credentials(
-            httpx.Client(), context.server_info.authentication.providers
+            httpx2.Client(), context.server_info.authentication.providers
         )
 
     out, err = capsys.readouterr()
@@ -260,7 +260,7 @@ def client(
 ):
     decode_token.return_value = decoded_token
     context._token_cache = tmp_path
-    client = httpx.Client(
+    client = httpx2.Client(
         auth=TiledAuth(
             context.server_info.authentication.links.refresh_session,
             context.http_client.cookies["tiled_csrf"],
@@ -296,7 +296,7 @@ def test_client_refresh(
 ):
     decode_token.return_value = decoded_token
     context._token_cache = tmp_path
-    httpx_client = httpx.Client(
+    httpx2_client = httpx2.Client(
         auth=TiledAuth(
             context.server_info.authentication.links.refresh_session,
             context.http_client.cookies["tiled_csrf"],
@@ -305,14 +305,14 @@ def test_client_refresh(
         ),
         cookies=context.http_client.cookies,
     )
-    assert isinstance(httpx_client.auth, TiledAuth)
-    httpx_client.auth.sync_tokens(tokens_response)
+    assert isinstance(httpx2_client.auth, TiledAuth)
+    httpx2_client.auth.sync_tokens(tokens_response)
     client = from_context(context)
     base_url = str(context.http_client.base_url).replace("b'", "").replace("'", "")
 
     with respx.mock:
-        # Change to httpx Client from TestClient FastAPI to mock responses
-        context.http_client = httpx_client
+        # Change to httpx2 Client from TestClient FastAPI to mock responses
+        context.http_client = httpx2_client
 
         respx.post(
             context.server_info.authentication.links.refresh_session,
@@ -323,14 +323,14 @@ def test_client_refresh(
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         ).mock(
-            return_value=httpx.Response(
-                status_code=httpx.codes.OK, json=tokens_response
+            return_value=httpx2.Response(
+                status_code=httpx2.codes.OK, json=tokens_response
             )
         )
         respx.get(f"{base_url}/api/v1/auth/whoami").mock(
             side_effect=[
-                httpx.Response(status_code=httpx.codes.UNAUTHORIZED),
-                httpx.Response(status_code=httpx.codes.OK, json={}),
+                httpx2.Response(status_code=httpx2.codes.UNAUTHORIZED),
+                httpx2.Response(status_code=httpx2.codes.OK, json={}),
             ]
         )
         assert client.context.whoami() == {}
@@ -346,7 +346,7 @@ def test_logout(
 ):
     decode_token.return_value = decoded_token
     context._token_cache = tmp_path
-    httpx_client = httpx.Client(
+    httpx2_client = httpx2.Client(
         auth=TiledAuth(
             context.server_info.authentication.links.refresh_session,
             context.http_client.cookies["tiled_csrf"],
@@ -354,13 +354,13 @@ def test_logout(
         ),
         cookies=context.http_client.cookies,
     )
-    assert isinstance(httpx_client.auth, TiledAuth)
-    httpx_client.auth.sync_tokens(tokens_response)
+    assert isinstance(httpx2_client.auth, TiledAuth)
+    httpx2_client.auth.sync_tokens(tokens_response)
     client = from_context(context)
 
     with respx.mock:
-        # Change to httpx Client from TestClient FastAPI to mock responses
-        context.http_client = httpx_client
+        # Change to httpx2 Client from TestClient FastAPI to mock responses
+        context.http_client = httpx2_client
 
         respx.get(
             context.server_info.authentication.links.logout,
@@ -368,7 +368,7 @@ def test_logout(
                 "id_token_hint": tokens_response["id_token"],
                 "client_id": context.client_id,
             },
-        ).mock(return_value=httpx.Response(status_code=httpx.codes.OK))
+        ).mock(return_value=httpx2.Response(status_code=httpx2.codes.OK))
 
         client.logout()
 
@@ -410,8 +410,8 @@ def mock_tiled_mediated_server(
 
     # 1. POST to Tiled's /authorize starts the flow and returns the two URIs.
     respx_mock.post(tiled_mediated_urls["auth_endpoint"], name="authorize").mock(
-        return_value=httpx.Response(
-            status_code=httpx.codes.OK,
+        return_value=httpx2.Response(
+            status_code=httpx2.codes.OK,
             json={
                 "authorization_uri": tiled_mediated_urls["authorization_uri"],
                 "verification_uri": tiled_mediated_urls["verification_uri"],
@@ -425,8 +425,8 @@ def mock_tiled_mediated_server(
 
     # 2. POST to Tiled's /token endpoint (the client polls this) returns tokens.
     respx_mock.post(tiled_mediated_urls["verification_uri"], name="token_polling").mock(
-        return_value=httpx.Response(
-            status_code=httpx.codes.OK,
+        return_value=httpx2.Response(
+            status_code=httpx2.codes.OK,
             json=tokens_response,
         )
     )
@@ -447,7 +447,7 @@ def test_tiled_mediated_device_flow_browser_and_polling_urls(
     """
     with patch("webbrowser.open", return_value=False) as mock_open:
         tokens = device_code_grant(
-            httpx.Client(),
+            httpx2.Client(),
             auth_endpoint=tiled_mediated_urls["auth_endpoint"],
             client_id=None,  # forces the Tiled-mediated "else" branch
             token_endpoint=None,  # forces the Tiled-mediated "else" branch
@@ -491,18 +491,18 @@ def test_tiled_mediated_device_flow_polling_pending(
     token_polling_route = mock_tiled_mediated_server["token_polling"]
     token_polling_route.return_value = None
     token_polling_route.side_effect = [
-        httpx.Response(
-            status_code=httpx.codes.BAD_REQUEST,
+        httpx2.Response(
+            status_code=httpx2.codes.BAD_REQUEST,
             json={"detail": {"error": "authorization_pending"}},
         ),
-        httpx.Response(status_code=httpx.codes.OK, json=tokens_response),
+        httpx2.Response(status_code=httpx2.codes.OK, json=tokens_response),
     ]
 
     stamina.set_testing(testing=True, attempts=1)
 
     with patch("webbrowser.open", return_value=False):
         tokens = device_code_grant(
-            httpx.Client(),
+            httpx2.Client(),
             auth_endpoint=tiled_mediated_urls["auth_endpoint"],
             client_id=None,
             token_endpoint=None,

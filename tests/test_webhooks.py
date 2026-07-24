@@ -11,12 +11,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import quote as urlquote
 
 import anyio
-import httpx
+import httpx2
 import pytest
 import respx
 import stamina
 from fastapi import FastAPI, HTTPException
-from httpx import Response
+from httpx2 import Response
 from sqlalchemy import select as sa_select
 
 from tiled.catalog import from_uri, in_memory
@@ -57,7 +57,7 @@ def _wh_req(**kwargs: Any) -> dict[str, Any]:
 
 
 def _register_webhook(
-    http: httpx.Client, path: str = "", **kwargs: Any
+    http: httpx2.Client, path: str = "", **kwargs: Any
 ) -> WebhookResponse:
     """Register a webhook on ``path`` (default: root) and return the validated response."""
     encoded = urlquote(path, safe="/")
@@ -72,7 +72,7 @@ def _capturing_mock() -> list[dict[str, Any]]:
     """Attach a respx side-effect that captures decoded payloads and returns 200."""
     received: list[dict[str, Any]] = []
 
-    def _capture(request: httpx.Request) -> Response:
+    def _capture(request: httpx2.Request) -> Response:
         received.append(json.loads(request.content))
         return Response(200)
 
@@ -105,7 +105,7 @@ def context(app: FastAPI) -> Generator[Context, None, None]:
 
 
 @pytest.fixture(scope="module")
-def http(context: Context) -> httpx.Client:
+def http(context: Context) -> httpx2.Client:
     return context.http_client
 
 
@@ -115,7 +115,7 @@ def client(context: Context) -> Container:
 
 
 @pytest.fixture(scope="module")
-def bob_http(context: Context) -> httpx.Client:
+def bob_http(context: Context) -> httpx2.Client:
     """Authenticated HTTP client for bob (non-admin user)."""
     provider = context.server_info.authentication.providers[0]
     auth_endpoint = provider.links["auth_endpoint"]
@@ -123,7 +123,7 @@ def bob_http(context: Context) -> httpx.Client:
         context.http_client, auth_endpoint, provider.provider, "bob", "secret2"
     )
     access_token = tokens["access_token"]
-    return httpx.Client(
+    return httpx2.Client(
         transport=context.http_client._transport,
         base_url=str(context.http_client.base_url),
         headers={"Authorization": f"Bearer {access_token}"},
@@ -213,7 +213,7 @@ async def test_deliver_success_updates_delivery_row(
 
     with respx.mock:
         respx.post(WEBHOOK_URL).mock(return_value=Response(200))
-        async with httpx.AsyncClient() as c:
+        async with httpx2.AsyncClient() as c:
             await _deliver(
                 client=c,
                 session_factory=session_factory,
@@ -241,7 +241,7 @@ async def test_deliver_retries_on_failure(
         with respx.mock:
             respx.post(WEBHOOK_URL).mock(return_value=Response(500))
             with stamina.set_testing(True, attempts=MAX_ATTEMPTS):
-                async with httpx.AsyncClient() as c:
+                async with httpx2.AsyncClient() as c:
                     await _deliver(
                         client=c,
                         session_factory=session_factory,
@@ -270,7 +270,7 @@ class TestWebhookIntegration:
             yield
 
     @pytest.fixture(autouse=True)
-    def cleanup_webhooks(self, http: httpx.Client) -> Generator[list[int], None, None]:
+    def cleanup_webhooks(self, http: httpx2.Client) -> Generator[list[int], None, None]:
         """Yield a collector list; delete every webhook ID added to it after the test."""
         extra_ids: list[int] = []
         yield extra_ids
@@ -285,13 +285,13 @@ class TestWebhookIntegration:
         return request.node.name.replace("[", "_").replace("]", "")
 
     @pytest.fixture
-    def registered_webhook(self, http: httpx.Client) -> int:
+    def registered_webhook(self, http: httpx2.Client) -> int:
         """Register a catch-all webhook on the root node and return its id."""
         return _register_webhook(http).id
 
     @respx.mock
     def test_register_webhook_and_fires_on_create_container(
-        self, http: httpx.Client, client: Container, node_key: str
+        self, http: httpx2.Client, client: Container, node_key: str
     ) -> None:
         received = _capturing_mock()
 
@@ -304,7 +304,7 @@ class TestWebhookIntegration:
         assert event["key"] == node_key
 
     @respx.mock
-    def test_register_webhook_returns_webhook_in_list(self, http: httpx.Client) -> None:
+    def test_register_webhook_returns_webhook_in_list(self, http: httpx2.Client) -> None:
         respx.post(WEBHOOK_URL).mock(return_value=Response(200))
 
         http.post(
@@ -322,7 +322,7 @@ class TestWebhookIntegration:
 
     @respx.mock
     def test_delete_webhook_stops_delivery(
-        self, http: httpx.Client, client: Container, node_key: str
+        self, http: httpx2.Client, client: Container, node_key: str
     ) -> None:
         route = respx.post(WEBHOOK_URL).mock(return_value=Response(200))
         wh = _register_webhook(http)
@@ -332,12 +332,12 @@ class TestWebhookIntegration:
 
     @respx.mock
     def test_dispatcher_hmac_signature(
-        self, http: httpx.Client, client: Container, node_key: str
+        self, http: httpx2.Client, client: Container, node_key: str
     ) -> None:
         secret = "mysecret"
         received_headers: dict[str, str] = {}
 
-        def capture(request: httpx.Request) -> Response:
+        def capture(request: httpx2.Request) -> Response:
             received_headers.update(dict(request.headers))
             return Response(200)
 
@@ -350,7 +350,7 @@ class TestWebhookIntegration:
 
     @respx.mock
     def test_secret_stored_encrypted_not_plaintext(
-        self, app: FastAPI, http: httpx.Client
+        self, app: FastAPI, http: httpx2.Client
     ) -> None:
         secret = "super-secret-value"
         respx.post(WEBHOOK_URL).mock(return_value=Response(200))
@@ -359,7 +359,7 @@ class TestWebhookIntegration:
         # Directly query the DB to inspect the stored value.
         # Use anyio.from_thread.start_blocking_portal() to safely run async
         # code from a sync test context regardless of whether an event loop
-        # is already running in the current thread (e.g. under the httpx
+        # is already running in the current thread (e.g. under the httpx2
         # ASGI transport).
         catalog_context = app.state.root_tree.context
 
@@ -379,7 +379,7 @@ class TestWebhookIntegration:
 
     @respx.mock
     def test_webhook_fires_for_descendant_node(
-        self, http: httpx.Client, client: Container, node_key: str
+        self, http: httpx2.Client, client: Container, node_key: str
     ) -> None:
         received = _capturing_mock()
         _register_webhook(http)
@@ -395,7 +395,7 @@ class TestWebhookIntegration:
     @respx.mock
     def test_delivery_history_endpoint(
         self,
-        http: httpx.Client,
+        http: httpx2.Client,
         client: Container,
         registered_webhook: int,
         node_key: str,
@@ -417,7 +417,7 @@ class TestWebhookIntegration:
     @respx.mock
     def test_subnode_webhook_fires_for_descendant_only(
         self,
-        http: httpx.Client,
+        http: httpx2.Client,
         client: Container,
         node_key: str,
         cleanup_webhooks: list[int],
@@ -448,7 +448,7 @@ class TestWebhookIntegration:
     @respx.mock
     def test_subnode_webhook_in_list_for_its_path(
         self,
-        http: httpx.Client,
+        http: httpx2.Client,
         client: Container,
         node_key: str,
         cleanup_webhooks: list[int],
@@ -479,7 +479,7 @@ class TestWebhookIntegration:
 
     @respx.mock
     def test_metadata_updated_fires_webhook(
-        self, http: httpx.Client, client: Container, node_key: str
+        self, http: httpx2.Client, client: Container, node_key: str
     ) -> None:
         received = _capturing_mock()
         _register_webhook(http, events=[EventType.container_child_metadata_updated])
@@ -494,7 +494,7 @@ class TestWebhookIntegration:
 
     @respx.mock
     def test_event_filter_excludes_wrong_type(
-        self, http: httpx.Client, client: Container, node_key: str
+        self, http: httpx2.Client, client: Container, node_key: str
     ) -> None:
         """A webhook registered for container_child_created must NOT fire when
         container_child_metadata_updated is dispatched."""
@@ -512,7 +512,7 @@ class TestWebhookIntegration:
 
     @respx.mock
     def test_metadata_payload_correct_when_only_specs_updated(
-        self, http: httpx.Client, client: Container, node_key: str
+        self, http: httpx2.Client, client: Container, node_key: str
     ) -> None:
         """When replace_metadata is called with specs only (no metadata argument),
         the webhook payload must carry the pre-existing metadata, not an empty dict."""
@@ -536,7 +536,7 @@ class TestWebhookIntegration:
     @respx.mock
     def test_webhook_cascade_deleted_when_node_deleted(
         self,
-        http: httpx.Client,
+        http: httpx2.Client,
         client: Container,
         node_key: str,
     ) -> None:
@@ -564,7 +564,7 @@ class TestWebhookIntegration:
 
     @respx.mock
     def test_close_stream_fires_webhook(
-        self, http: httpx.Client, client: Container, node_key: str
+        self, http: httpx2.Client, client: Container, node_key: str
     ) -> None:
         """Calling close_stream on a node must dispatch a stream-closed webhook event."""
         received = _capturing_mock()
@@ -595,7 +595,7 @@ class TestWebhookIntegration:
         ids=["register", "list", "delete", "history"],
     )
     def test_non_admin_rejected(
-        self, bob_http: httpx.Client, method: str, path: str, kwargs: dict
+        self, bob_http: httpx2.Client, method: str, path: str, kwargs: dict
     ) -> None:
         """Non-admin user must get 401 for all webhook endpoints."""
         resp = getattr(bob_http, method)(path, **kwargs)
@@ -608,7 +608,7 @@ class TestWebhookIntegration:
 # ---------------------------------------------------------------------------
 
 
-def test_ssrf_private_ip_rejected(http: httpx.Client) -> None:
+def test_ssrf_private_ip_rejected(http: httpx2.Client) -> None:
     original_getaddrinfo = socket.getaddrinfo
 
     def _fake_getaddrinfo(host, port, *args, **kwargs):
@@ -790,8 +790,8 @@ async def test_deliver_network_error_sets_outcome_failed(
     payload: dict[str, Any] = {"type": "container-child-created"}
 
     with respx.mock:
-        respx.post(WEBHOOK_URL).mock(side_effect=httpx.ConnectError("refused"))
-        async with httpx.AsyncClient() as c:
+        respx.post(WEBHOOK_URL).mock(side_effect=httpx2.ConnectError("refused"))
+        async with httpx2.AsyncClient() as c:
             await _deliver(
                 client=c,
                 session_factory=session_factory,
@@ -823,7 +823,7 @@ async def test_deliver_deleted_row_does_not_raise(
 
     with respx.mock:
         respx.post(WEBHOOK_URL).mock(return_value=Response(200))
-        async with httpx.AsyncClient() as c:
+        async with httpx2.AsyncClient() as c:
             await _deliver(
                 client=c,
                 session_factory=session_factory,
@@ -843,7 +843,7 @@ async def test_deliver_sends_event_id_header(
     delivery, session_factory = mock_delivery_session
     sent_headers: list[dict] = []
 
-    def _capture(request: httpx.Request) -> Response:
+    def _capture(request: httpx2.Request) -> Response:
         sent_headers.append(dict(request.headers))
         return Response(200)
 
@@ -851,7 +851,7 @@ async def test_deliver_sends_event_id_header(
 
     with respx.mock:
         respx.post(WEBHOOK_URL).mock(side_effect=_capture)
-        async with httpx.AsyncClient() as c:
+        async with httpx2.AsyncClient() as c:
             await _deliver(
                 client=c,
                 session_factory=session_factory,
@@ -874,7 +874,7 @@ async def test_deliver_no_signature_when_no_secret(
     delivery, session_factory = mock_delivery_session
     sent_headers: list[dict] = []
 
-    def _capture(request: httpx.Request) -> Response:
+    def _capture(request: httpx2.Request) -> Response:
         sent_headers.append(dict(request.headers))
         return Response(200)
 
@@ -882,7 +882,7 @@ async def test_deliver_no_signature_when_no_secret(
 
     with respx.mock:
         respx.post(WEBHOOK_URL).mock(side_effect=_capture)
-        async with httpx.AsyncClient() as c:
+        async with httpx2.AsyncClient() as c:
             await _deliver(
                 client=c,
                 session_factory=session_factory,
@@ -942,7 +942,7 @@ def test_webhooks_disabled_router_not_mounted(tmp_path: Any) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_register_webhook_http_url_rejected(http: httpx.Client) -> None:
+def test_register_webhook_http_url_rejected(http: httpx2.Client) -> None:
     """A plain HTTP URL must be rejected at schema validation (HTTP 422)."""
     resp = http.post(
         "/api/v1/webhooks/target/",
@@ -962,13 +962,13 @@ def test_register_webhook_empty_events_normalized_to_none() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_delete_nonexistent_webhook_returns_404(http: httpx.Client) -> None:
+def test_delete_nonexistent_webhook_returns_404(http: httpx2.Client) -> None:
     """DELETE on a webhook ID that does not exist must return 404."""
     resp = http.delete("/api/v1/webhooks/999999")
     assert resp.status_code == 404
 
 
-def test_history_nonexistent_webhook_returns_404(http: httpx.Client) -> None:
+def test_history_nonexistent_webhook_returns_404(http: httpx2.Client) -> None:
     """GET /history/{id} for a non-existent webhook must return 404."""
     resp = http.get("/api/v1/webhooks/history/999999")
     assert resp.status_code == 404

@@ -6,7 +6,7 @@ import sys
 import threading
 from queue import Queue
 
-import httpx
+import httpx2
 import pytest
 
 
@@ -57,7 +57,7 @@ def scrape_server_url_from_logs(process):
 def check_server_readiness(process):
     "Given a server process, check that it responds successfully to HTTP."
     url = scrape_server_url_from_logs(process)
-    httpx.get(url).raise_for_status()
+    httpx2.get(url).raise_for_status()
 
 
 @pytest.mark.parametrize(

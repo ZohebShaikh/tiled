@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlparse
 
-import httpx
+import httpx2
 import stamina
 from sqlalchemy import delete, select
 
@@ -197,7 +197,7 @@ def _decrypt_secret(ciphertext: str, secret_keys: list[str]) -> str | None:
 
 async def _deliver(
     *,
-    client: httpx.AsyncClient,
+    client: httpx2.AsyncClient,
     session_factory,
     delivery_id: int,
     url: str,
@@ -318,14 +318,14 @@ class WebhookDispatcher:
     session_factory : callable
         Callable returning an ``AsyncSession`` context manager
         (i.e. ``context.session``).
-    client : httpx.AsyncClient, optional
+    client : httpx2.AsyncClient, optional
         Injected for testing.
     """
 
     def __init__(
         self,
         session_factory,
-        _client: httpx.AsyncClient | None = None,
+        _client: httpx2.AsyncClient | None = None,
         secret_keys: list[str] | None = None,
     ):
         self._session_factory = session_factory
@@ -339,7 +339,7 @@ class WebhookDispatcher:
 
     async def startup(self) -> None:
         if self._owns_client:
-            self._client = httpx.AsyncClient()
+            self._client = httpx2.AsyncClient()
         self._sem = asyncio.Semaphore(_DISPATCH_CONCURRENCY)
         self._prune_task = asyncio.create_task(
             _prune_old_deliveries(

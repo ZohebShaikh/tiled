@@ -33,12 +33,12 @@
           "serve",
           "config","${input:config_path}",
           "--host", "127.0.0.1",
-          "--port", "8000",
-          "--scalable"
+          "--port", "8407",
+          // "--scalable"
         ],
-        "env": {
-          "TILED_SINGLE_USER_API_KEY": "secret",
-        },
+        // "env": {
+        //   "TILED_SINGLE_USER_API_KEY": "secret",
+        // },
         "console": "integratedTerminal",
         "justMyCode": false,
         "jinja": true,

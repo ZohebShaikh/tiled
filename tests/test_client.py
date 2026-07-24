@@ -2,7 +2,7 @@ import logging
 import threading
 from pathlib import Path
 
-import httpx
+import httpx2
 import numpy
 import pandas
 import pytest
@@ -27,7 +27,7 @@ tree = MapAdapter({})
 
 
 def test_configurable_timeout():
-    with Context.from_app(build_app(tree), timeout=httpx.Timeout(17)) as context:
+    with Context.from_app(build_app(tree), timeout=httpx2.Timeout(17)) as context:
         assert context.http_client.timeout.connect == 17
         assert context.http_client.timeout.read == 17
 
@@ -221,7 +221,7 @@ def test_tiled_retry_logging(caplog, logs_enabled):
                 with attempt:
                     n += 1
                     if n < 2:
-                        raise httpx.ReadTimeout("simulated timeout")
+                        raise httpx2.ReadTimeout("simulated timeout")
 
         tiled_messages = [r for r in caplog.records if r.name == "tiled.client"]
         if logs_enabled:
@@ -531,7 +531,7 @@ def test_signal_retry_uses_standalone_indicator(show_progress):
                 with attempt:
                     call_count += 1
                     if call_count < 3:
-                        raise httpx.ConnectError("test")
+                        raise httpx2.ConnectError("test")
             assert "Retrying" in fake_stderr.getvalue()
         finally:
             stamina.set_active(False)
@@ -578,7 +578,7 @@ def test_retry_context_signals_retry_indicator():
                     with attempt:
                         call_count += 1
                         if call_count < 3:
-                            raise httpx.ConnectError("test")
+                            raise httpx2.ConnectError("test")
                 # signal_retry should have been called for attempts 2 and 3
                 # (retry scheduled after attempt 1 and 2 fail)
                 assert mock_signal.call_count == 2
@@ -609,7 +609,7 @@ def test_keyboard_interrupt_cancels_retries():
                 for attempt in retry_context():
                     with attempt:
                         attempts_made.append(attempt.num)
-                        raise httpx.ConnectError("refused")
+                        raise httpx2.ConnectError("refused")
             except KeyboardInterrupt:
                 pass  # expected
             else:
@@ -645,7 +645,7 @@ def test_keyboard_interrupt_cleans_up_retry_indicator():
                 try:
                     for attempt in retry_context(context):
                         with attempt:
-                            raise httpx.ConnectError("refused")
+                            raise httpx2.ConnectError("refused")
                 except KeyboardInterrupt:
                     pass
         finally:
@@ -669,9 +669,9 @@ def test_should_retry(status_code, headers, expected):
     """should_retry returns Retry-After float, True, or False depending on the response."""
     from tiled.client.utils import should_retry
 
-    request = httpx.Request("GET", "http://example.com/test")
-    response = httpx.Response(status_code, headers=headers, request=request)
-    exc = httpx.HTTPStatusError("error", request=request, response=response)
+    request = httpx2.Request("GET", "http://example.com/test")
+    response = httpx2.Response(status_code, headers=headers, request=request)
+    exc = httpx2.HTTPStatusError("error", request=request, response=response)
     assert should_retry(exc) == expected
 
 
@@ -679,7 +679,7 @@ def test_should_not_retry_unsupported_protocol():
     """A bad URL scheme (e.g. 'htps://') must not trigger a retry loop."""
     from tiled.client.utils import should_retry
 
-    exc = httpx.UnsupportedProtocol(
+    exc = httpx2.UnsupportedProtocol(
         "Request URL has an unsupported protocol 'htps://'."
     )
     assert should_retry(exc) is False
@@ -689,7 +689,7 @@ def test_should_not_retry_local_protocol_error():
     """An invalid request (e.g. illegal header value) must not trigger a retry loop."""
     from tiled.client.utils import should_retry
 
-    exc = httpx.LocalProtocolError("Illegal header value b'a\\r\\nInjected: 1'")
+    exc = httpx2.LocalProtocolError("Illegal header value b'a\\r\\nInjected: 1'")
     assert should_retry(exc) is False
 
 
@@ -697,9 +697,9 @@ def test_handle_error_lets_429_propagate():
     """handle_error does not convert 429 into ClientError — lets it propagate for retry."""
     from tiled.client.utils import handle_error
 
-    request = httpx.Request("GET", "http://example.com/test")
-    response = httpx.Response(429, headers={"Retry-After": "5"}, request=request)
-    with pytest.raises(httpx.HTTPStatusError) as exc_info:
+    request = httpx2.Request("GET", "http://example.com/test")
+    response = httpx2.Response(429, headers={"Retry-After": "5"}, request=request)
+    with pytest.raises(httpx2.HTTPStatusError) as exc_info:
         handle_error(response)
     # It should be a plain HTTPStatusError, not a ClientError
     from tiled.client.utils import ClientError
@@ -719,13 +719,13 @@ def test_retry_context_logs_429_retry(caplog):
                 with attempt:
                     attempts_made += 1
                     if attempts_made < 2:
-                        request = httpx.Request("GET", "http://example.com/data")
-                        response = httpx.Response(
+                        request = httpx2.Request("GET", "http://example.com/data")
+                        response = httpx2.Response(
                             429,
                             headers={"Retry-After": "0"},
                             request=request,
                         )
-                        raise httpx.HTTPStatusError(
+                        raise httpx2.HTTPStatusError(
                             "Too Many Requests", request=request, response=response
                         )
 
@@ -743,19 +743,19 @@ def test_429_retry_with_real_server():
 
     call_count = {"n": 0}
 
-    class ThrottlingTransport(httpx.BaseTransport):
+    class ThrottlingTransport(httpx2.BaseTransport):
         def handle_request(self, request):
             call_count["n"] += 1
             if call_count["n"] <= 2:
-                return httpx.Response(
+                return httpx2.Response(
                     429,
                     headers={"Retry-After": "0"},
                 )
-            return httpx.Response(200, json={"status": "ok"})
+            return httpx2.Response(200, json={"status": "ok"})
 
     stamina.set_active(True)
     try:
-        with httpx.Client(transport=ThrottlingTransport()) as client:
+        with httpx2.Client(transport=ThrottlingTransport()) as client:
             for attempt in retry_context():
                 with attempt:
                     response = client.get("http://testserver/data")

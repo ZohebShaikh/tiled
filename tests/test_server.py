@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 import numpy
 import pytest
 import uvicorn
@@ -90,7 +90,7 @@ def test_500_response(server):
     result in the server sending no response at all, leading clients to raise
     like:
 
-    httpx.RemoteProtocolError: Server disconnected without sending a response.
+    httpx2.RemoteProtocolError: Server disconnected without sending a response.
 
     This can happen when bugs are introduced in the middleware layer.
     """
@@ -112,20 +112,20 @@ def test_public_server(public_server):
 def test_internal_authentication_mode_with_password_clients(multiuser_server):
     "The 'internal' authentication mode used to be named 'password'."
     # Mock old client
-    response = httpx.get(
+    response = httpx2.get(
         multiuser_server + "/api/v1/", headers={"user-agent": "python-tiled/0.1.0b16"}
     )
     actual_mode = response.json()["authentication"]["providers"][0]["mode"]
     assert actual_mode == "password"
 
     # Mock new client
-    response = httpx.get(
+    response = httpx2.get(
         multiuser_server + "/api/v1/", headers={"user-agent": "python-tiled/0.1.0b17"}
     )
     actual_mode = response.json()["authentication"]["providers"][0]["mode"]
     assert actual_mode == "internal"
 
     # Mock unknown client
-    response = httpx.get(multiuser_server + "/api/v1/", headers={})
+    response = httpx2.get(multiuser_server + "/api/v1/", headers={})
     actual_mode = response.json()["authentication"]["providers"][0]["mode"]
     assert actual_mode == "internal"

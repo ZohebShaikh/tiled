@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlparse
 
 import dask
 import dask.array
-import httpx
+import httpx2
 import numpy
 from numpy.typing import NDArray
 
@@ -426,8 +426,8 @@ class _DaskArrayClient(BaseClient):
                     params=params,
                 )
                 if response.status_code in [
-                    httpx.codes.BAD_REQUEST,
-                    httpx.codes.CONFLICT,
+                    httpx2.codes.BAD_REQUEST,
+                    httpx2.codes.CONFLICT,
                 ]:
                     raise ValueError(
                         response.json()

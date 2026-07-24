@@ -4,7 +4,7 @@ import os
 import time
 from typing import Any, Tuple
 
-import httpx
+import httpx2
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jose import ExpiredSignatureError, jwt
@@ -78,10 +78,10 @@ def mock_oidc_server(
     json_web_keyset: list[dict[str, Any]],
 ) -> MockRouter:
     respx_mock.get(well_known_url).mock(
-        return_value=httpx.Response(httpx.codes.OK, json=well_known_response)
+        return_value=httpx2.Response(httpx2.codes.OK, json=well_known_response)
     )
     respx_mock.get(well_known_response["jwks_uri"]).mock(
-        return_value=httpx.Response(httpx.codes.OK, json={"keys": json_web_keyset})
+        return_value=httpx2.Response(httpx2.codes.OK, json={"keys": json_web_keyset})
     )
     return respx_mock
 
@@ -219,7 +219,7 @@ def encrypted_token(token: dict[str, str], private_key: rsa.RSAPrivateKey) -> st
 @pytest.mark.asyncio
 async def test_proxied_oidc_token_retrieval(well_known_url: str, mock_oidc_server: MockRouter):
     authenticator = ProxiedOIDCAuthenticator("tiled", "tiled", well_known_url, device_flow_client_id="tiled-cli")
-    test_request = httpx.Request("GET", "http://example.com", headers={
+    test_request = httpx2.Request("GET", "http://example.com", headers={
         "Authorization": "bearer FOO"
     })
 
@@ -269,7 +269,7 @@ async def test_OIDCAuthenticator_mock(
 
     # Add token exchange endpoint to existing mock_oidc_server
     mock_oidc_server.post(well_known_response["token_endpoint"]).mock(
-        return_value=httpx.Response(200, json={
+        return_value=httpx2.Response(200, json={
             "access_token": "mock-access-token",
             "id_token": "mock-id-token",
             "token_type": "bearer"

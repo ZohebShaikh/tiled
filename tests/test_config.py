@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 import respx
 from fastapi import APIRouter
@@ -211,8 +211,8 @@ def test_proxied_authenticator_single_instance_required(
 ):
     respx.get("http://example.com").mock(
         side_effect=[
-            httpx.Response(httpx.codes.OK, json=well_known_response),
-            httpx.Response(httpx.codes.OK, json=well_known_response),
+            httpx2.Response(httpx2.codes.OK, json=well_known_response),
+            httpx2.Response(httpx2.codes.OK, json=well_known_response),
         ]
     )
     with pytest.raises(
@@ -255,7 +255,7 @@ def test_proxied_authenticator_is_not_used_with_other_authenticators(
     well_known_response: dict[str, Any],
 ):
     respx.get("http://example.com").mock(
-        return_value=httpx.Response(httpx.codes.OK, json=well_known_response)
+        return_value=httpx2.Response(httpx2.codes.OK, json=well_known_response)
     )
     with pytest.raises(
         ValidationError,

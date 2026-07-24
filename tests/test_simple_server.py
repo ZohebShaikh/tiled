@@ -7,7 +7,7 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-import httpx
+import httpx2
 import pyarrow
 import pytest
 
@@ -34,7 +34,7 @@ def test_default():
         repr(server)
         server._repr_html_()  # impl, used by Jupyter
         # Web UI
-        response = httpx.get(server.web_ui_link).raise_for_status()
+        response = httpx2.get(server.web_ui_link).raise_for_status()
         assert response.headers["content-type"].startswith("text/html")
 
 
@@ -129,7 +129,7 @@ def test_simple():
 def test_webhooks_disabled_by_default():
     """Webhook endpoints must return 404 when enable_webhooks is not set."""
     with SimpleTiledServer() as server:
-        resp = httpx.get(
+        resp = httpx2.get(
             f"http://localhost:{server.port}/api/v1/webhooks/target/",
             headers={"Authorization": f"Apikey {server.api_key}"},
         )
@@ -150,7 +150,7 @@ def test_webhooks_enabled(tmp_path):
 
         # Register a webhook pointing at a plain HTTP localhost URL —
         # this would be rejected by the production validator.
-        resp = httpx.post(
+        resp = httpx2.post(
             f"http://localhost:{server.port}/api/v1/webhooks/target/",
             headers={
                 "Authorization": f"Apikey {server.api_key}",
@@ -189,7 +189,7 @@ def test_webhooks_delivers_event(tmp_path):
             client = from_uri(server.uri)
 
             # Register webhook pointing at our local receiver.
-            resp = httpx.post(
+            resp = httpx2.post(
                 f"http://localhost:{server.port}/api/v1/webhooks/target/",
                 headers={
                     "Authorization": f"Apikey {server.api_key}",

@@ -8,7 +8,7 @@ from enum import IntEnum
 from importlib import resources
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 import uvicorn
 from sqlalchemy import text
@@ -22,7 +22,7 @@ from tiled.utils import ensure_specified_sql_driver
 
 @contextlib.contextmanager
 def fail_with_status_code(status_code):
-    with pytest.raises(httpx.HTTPStatusError) as info:
+    with pytest.raises(httpx2.HTTPStatusError) as info:
         yield info
     assert info.value.response.status_code == status_code
 

@@ -1,6 +1,6 @@
 import re
 
-import httpx
+import httpx2
 import pytest
 from fastapi import APIRouter
 from starlette.status import HTTP_404_NOT_FOUND, HTTP_500_INTERNAL_SERVER_ERROR
@@ -61,6 +61,6 @@ def test_correlation_id():
     with Context.from_app(app, raise_server_exceptions=False) as context:
         client = from_context(context)
         response_500 = client.context.http_client.get("/error")
-        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        with pytest.raises(httpx2.HTTPStatusError) as exc_info:
             handle_error(response_500)
         assert "correlation ID" in exc_info.value.args[0]
