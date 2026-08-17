@@ -71,7 +71,7 @@ all = [
     "dask",
     "dask[array]",
     "dask[dataframe]",
-    "duckdb <1.4.0",  # https://github.com/bluesky/tiled/issues/1144
+    # "duckdb <1.4.0",  # https://github.com/bluesky/tiled/issues/1144
     "entrypoints",
     "fastapi >=0.132.0",
     "h5netcdf",
@@ -210,7 +210,7 @@ server = [
     "dask",
     "dask[array]",
     "dask[dataframe]",
-    "duckdb <1.4.0",  # https://github.com/bluesky/tiled/issues/1144
+    # "duckdb <1.4.0",  # https://github.com/bluesky/tiled/issues/1144
     "entrypoints",
     "fastapi >=0.132.0",
     "h5netcdf",
@@ -287,6 +287,7 @@ test = [
 ]
 dev = [
   { include-group = "test" },
+  "pyright>=1.1.411",
 ]
 docs = [
     "ipykernel",

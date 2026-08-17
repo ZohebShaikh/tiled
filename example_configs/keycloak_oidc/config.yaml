@@ -1,36 +1,32 @@
+database:
+  uri: "postgresql://tiled:${POSTGRES_PASSWORD}@localhost:5432/auth"
+  init_if_not_exists: true
 authentication:
   providers:
-  - provider: keycloak_oidc
-    authenticator: tiled.authenticators:ProxiedOIDCAuthenticator
-    args:
-      audience: tiled_aud
-      client_id: tiled
-      device_flow_client_id: tiled-cli
-      well_known_uri: "http://localhost:8080/realms/master/.well-known/openid-configuration"
-      confirmation_message: "You have logged in with Proxied OIDC as {id}."
-
-access_control:
-  access_policy: "tiled_policy.example_pdp:ExampleAuthorizationPolicy"
-  args:
-    authorization_provider: http://localhost:8181/v1/data/rbac/
-    token_audience: tiled_aud
-    create_node_endpoint: "allow"
-    allowed_tags_endpoint: "tags"
-    scopes_endpoint: "scopes"
-
+    - provider: keycloak_oidc
+      authenticator: tiled.authenticators:ProxiedOIDCAuthenticator
+      args:
+        audience: account
+        client_id: tiled
+        client_secret: tiled-secret
+        device_flow_client_id: tiled-cli
+        well_known_uri: "http://localhost:8081/realms/master/.well-known/openid-configuration"
+        confirmation_message: "You have logged in with authn.diamond.ac.uk as {id}."
+        redirect_on_success: "http://localhost:8407/ui/auth-callback"
+        user_id_claim: fedid
+        allow_ui_login: False
+        check_authn_scopes: False
 trees:
   - path: /
     tree: catalog
     args:
-      uri: "sqlite:///./catalog.db"
-      writable_storage: "./data"
-      # This creates the database if it does not exist. This is convenient, but in
-      # a horizontally-scaled deployment, this can be a race condition and multiple
-      # containers may simultaneously attempt to create the database.
-      # If that is a problem, set this to false, and run:
-      #
-      # tiled catalog init URI
-      #
-      # separately.
+      uri: postgresql://tiled:${POSTGRES_PASSWORD}@localhost:5432/tiled_catalog
+      writable_storage: postgresql://tiled:${POSTGRES_PASSWORD}@localhost:5432/data
       init_if_not_exists: true
-      top_level_access_blob: {"tags": ["public"]}
+
+access_control:
+  access_policy: "tiled_policy.example_pdp:DiamondOpenPolicyAgentAuthorizationPolicy"
+  args:
+    authorization_provider: "http://localhost:8181/v1/data/diamond/policy/"
+    token_audience: account
+    empty_access_blob_public: true

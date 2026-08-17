@@ -33,11 +33,13 @@
           "serve",
           "config","${input:config_path}",
           "--host", "127.0.0.1",
-          "--port", "8000",
-          "--scalable"
+          "--port", "8407",
+          "--log-config", "example_log_config.yml"
+          // "--scalable"
         ],
         "env": {
-          "TILED_SINGLE_USER_API_KEY": "secret",
+          // "TILED_SINGLE_USER_API_KEY": "secret",
+          "POSTGRES_PASSWORD": "tiled_pg"
         },
         "console": "integratedTerminal",
         "justMyCode": false,

@@ -22,7 +22,7 @@ function PasswordLogin({
   provider: Provider;
   onSuccess: () => void;
 }) {
-  const { onLogin } = useAuth();
+  const { onLogin ,providers} = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -122,7 +122,14 @@ function ExternalLogin({ provider }: { provider: Provider }) {
 }
 
 export default function LoginPage() {
-  const { providers, isAuthenticated } = useAuth();
+  let { providers, isAuthenticated } = useAuth();
+
+  const externalProviders = providers
+    .filter((p) => p.mode === "external")
+    .filter((p) => p.allow_ui_login !== false);
+  if (externalProviders.length ===0){
+    isAuthenticated = false;
+  }
   const navigate = useNavigate();
 
   if (isAuthenticated) {
@@ -134,7 +141,6 @@ export default function LoginPage() {
   const internalProviders = providers.filter(
     (p) => p.mode === "internal" || (p.mode as string) === "password",
   );
-  const externalProviders = providers.filter((p) => p.mode === "external");
 
   return (
     <Box

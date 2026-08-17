@@ -33,12 +33,19 @@ function MainContainer() {
   );
 }
 
-function RequireAuth({ children }: { children: React.ReactElement }) {
-  const { authRequired, isAuthenticated, initialized } = useAuth();
-  if (!initialized) return <Skeleton variant="rectangular" />;
-  if (authRequired && !isAuthenticated) return <Navigate to="/login" replace />;
-  return children;
-}
+// function RequireAuth({ children }: { children: React.ReactElement }) {
+//   let { authRequired, isAuthenticated, initialized , providers } = useAuth();
+//   const externalProviders = providers
+//     .filter((p) => p.mode === "external")
+//     .filter((p) => p.allow_ui_login !== false);
+//   if (externalProviders.length === 0){
+//     initialized = false;
+//     isAuthenticated = false;
+//   }
+//   if (!initialized) return <Skeleton variant="rectangular" />;
+//   if (authRequired && !isAuthenticated) return <Navigate to="/login" replace />;
+//   return children;
+// }
 
 // This is set in vite.config.js. It is the base path of the ui.
 const basename = import.meta.env.BASE_URL;
@@ -89,9 +96,9 @@ function App() {
                   <Route
                     path="/browse/*"
                     element={
-                      <RequireAuth>
+                      // <RequireAuth>
                         <Browse />
-                      </RequireAuth>
+                      // </RequireAuth>
                     }
                   />
                 </Route>

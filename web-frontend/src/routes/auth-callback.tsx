@@ -7,7 +7,13 @@ import { useAuth } from "../auth/auth-context";
  * (set by the server's redirect_on_success) and redirects to browse.
  */
 export default function AuthCallback() {
-  const { onLogin } = useAuth();
+  let { onLogin ,providers} = useAuth();
+  const externalProviders = providers
+    .filter((p) => p.mode === "external")
+    .filter((p) => p.allow_ui_login !== false);
+  if (externalProviders.length ===0){
+    onLogin: () => {}
+  }
   const navigate = useNavigate();
 
   useEffect(() => {

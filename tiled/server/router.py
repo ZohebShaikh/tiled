@@ -231,6 +231,7 @@ def get_router(
                 spec = {
                     "provider": provider,
                     "mode": "external",
+                    "allow_ui_login": authenticator.allow_ui_login,
                     "links": {
                         "auth_endpoint": authenticator.device_authorization_endpoint,
                         "authorize_endpoint": f"{base_url}/auth/provider/{provider}/authorize",

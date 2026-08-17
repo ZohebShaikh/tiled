@@ -7,6 +7,7 @@ class AboutAuthenticationProvider(BaseModel):
     provider: str
     # "password" is a back-compat alias for "internal"; "internal should be preferred.
     mode: Literal["internal", "external", "password"]
+    allow_ui_login: bool = True
     links: Dict[str, str]
     confirmation_message: Optional[str] = None
     extra_scopes: Optional[List[str]] = None
