@@ -279,6 +279,7 @@ test = [
     "pytest-asyncio",
     "pytest-mock",
     "pytest-rerunfailures",
+    "pytest-timeout",
     "respx", # Mocking library for httpx
     "python3-saml",
     "types-cachetools",

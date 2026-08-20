@@ -260,6 +260,9 @@ def test_zarr_groups(prefix, path, suffix, slash, server_url, fs):
 
 
 @pytest.mark.parametrize("kind", list(array_cases.keys()))
+@pytest.mark.filterwarnings(
+    "ignore:.*does not have a Zarr V3 specification:zarr.errors.UnstableSpecificationWarning"
+)
 def test_array_dtypes(kind, prefix, server_url, fs):
     expected = array_cases[kind]
     url = f"{server_url}{prefix}/nested/array"
@@ -269,6 +272,9 @@ def test_array_dtypes(kind, prefix, server_url, fs):
 
 
 @pytest.mark.parametrize("kind", list(scalar_cases))
+@pytest.mark.filterwarnings(
+    "ignore:.*does not have a Zarr V3 specification:zarr.errors.UnstableSpecificationWarning"
+)
 def test_scalar_dtypes(kind, prefix, server_url, fs):
     expected = scalar_cases[kind]
     url = f"{server_url}{prefix}/scalar"
