@@ -10,14 +10,14 @@ class UserSessionState:
     """Data transfer class to communicate custom session state information."""
 
     user_name: str
-    state: dict = None
+    state: Optional[dict] = None
 
 
 class InternalAuthenticator(ABC):
-    def authenticate(self, username: str, password: str) -> Optional[UserSessionState]:
+    async def authenticate(self, username: str, password: str) -> Optional[UserSessionState]:
         raise NotImplementedError
 
 
 class ExternalAuthenticator(ABC):
-    def authenticate(self, request: Request) -> Optional[UserSessionState]:
+    async def authenticate(self, request: Request) -> Optional[UserSessionState]:
         raise NotImplementedError

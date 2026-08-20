@@ -1,6 +1,6 @@
 import os
 from collections.abc import AsyncGenerator
-from contextlib import nullcontext
+from contextlib import AbstractAsyncContextManager, nullcontext
 from typing import Callable, Optional, Union
 
 from fastapi import Depends
@@ -74,7 +74,9 @@ def get_database_engine(
 
 async def get_database_session_factory(
     engine: AsyncEngine = Depends(get_database_engine),
-) -> AsyncGenerator[Callable[[], Optional[AsyncSession]]]:
+) -> AsyncGenerator[
+    Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]]
+]:
     # Special case for single-user mode
     if engine is None:
 

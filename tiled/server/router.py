@@ -7,10 +7,11 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from functools import cache, partial
 from pathlib import Path
-from typing import Callable, List, Literal, Optional, TypeVar, Union
+from typing import Awaitable, Callable, List, Literal, Mapping, Optional, TypeVar, Union
 
 import anyio
-import packaging
+import anyio.to_thread
+import packaging.version
 import pydantic_settings
 from fastapi import (
     APIRouter,
@@ -27,7 +28,7 @@ from fastapi.responses import FileResponse
 from jmespath.exceptions import JMESPathError
 from json_merge_patch import merge as apply_merge_patch
 from jsonpatch import apply_patch as apply_json_patch
-from starlette.requests import URL
+from starlette.datastructures import URL
 from starlette.status import (
     HTTP_400_BAD_REQUEST,
     HTTP_403_FORBIDDEN,
@@ -41,9 +42,20 @@ from starlette.status import (
 
 from tiled.adapters.protocols import AnyAdapter
 from tiled.authenticators import ProxiedOIDCAuthenticator
+from tiled.catalog.adapter import (
+    CatalogArrayAdapter,
+    CatalogNodeAdapter,
+    CatalogRaggedAdapter,
+    CatalogTableAdapter,
+)
 from tiled.media_type_registration import SerializationRegistry
 from tiled.query_registration import QueryRegistry
-from tiled.schemas import About
+from tiled.schemas import (
+    About,
+    AboutAuthentication,
+    AboutAuthenticationLinks,
+    AboutAuthenticationProvider,
+)
 from tiled.server.protocols import ExternalAuthenticator, InternalAuthenticator
 from tiled.server.schemas import Principal
 
@@ -114,7 +126,7 @@ T = TypeVar("T")
 
 def _patch_route_signature(
     query_registry: QueryRegistry,
-) -> Callable[[Callable[..., T]], Callable[..., T]]:
+) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
     """
     This is done dynamically at router startup.
 
@@ -132,11 +144,11 @@ def _patch_route_signature(
 
     """
 
-    def inner(route: Callable[..., T]) -> Callable[..., T]:
+    def inner(route: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
         # Build a wrapper so that we can modify the signature
         # without mutating the wrapped original.
 
-        async def route_with_sig(*args, **kwargs):
+        async def route_with_sig(*args, **kwargs) -> T:
             return await route(*args, **kwargs)
 
         # Black magic here! FastAPI bases its validation and auto-generated swagger
@@ -172,7 +184,7 @@ def _patch_route_signature(
                     annotation=Optional[List[field_type]],
                 )
                 parameters.append(injected_parameter)
-        route_with_sig.__signature__ = signature.replace(parameters=parameters)
+        setattr(route_with_sig, "__signature__", signature.replace(parameters=parameters))
         # End black magic
 
         return route_with_sig
@@ -201,10 +213,7 @@ def get_router(
         # etc.) can remain lazy.
         request.state.endpoint = "about"
         base_url = get_base_url(request)
-        authentication = {
-            "required": not settings.allow_anonymous_access,
-        }
-        provider_specs = []
+        provider_specs: List[AboutAuthenticationProvider] = []
         # The name of the "internal" mode used to be "password".
         # This ensures back-compat with older Python clients.
         internal_mode_name = "internal"
@@ -215,52 +224,57 @@ def get_router(
             and client_version < MINIMUM_INTERNAL_PYTHON_CLIENT_VERSION
         ):
             internal_mode_name = "password"
+        authenticator: Optional[
+            Union[InternalAuthenticator, ExternalAuthenticator]
+        ] = None
         for provider, authenticator in authenticators.items():
             if isinstance(authenticator, InternalAuthenticator):
-                spec = {
-                    "provider": provider,
-                    "mode": internal_mode_name,
-                    "links": {
+                spec = AboutAuthenticationProvider(
+                    provider=provider,
+                    mode=internal_mode_name,
+                    links={
                         "auth_endpoint": f"{base_url}/auth/provider/{provider}/token"
                     },
-                    "confirmation_message": getattr(
+                    confirmation_message=getattr(
                         authenticator, "confirmation_message", None
                     ),
-                }
+                )
             elif isinstance(authenticator, ProxiedOIDCAuthenticator):
-                spec = {
-                    "provider": provider,
-                    "mode": "external",
-                    "links": {
+                spec = AboutAuthenticationProvider(
+                    provider=provider,
+                    mode="external",
+                    links={
                         "auth_endpoint": authenticator.device_authorization_endpoint,
                         "authorize_endpoint": f"{base_url}/auth/provider/{provider}/authorize",
                         "client_id": authenticator.device_flow_client_id,
                         "token_endpoint": authenticator.token_endpoint,
                     },
-                    "extra_scopes": getattr(authenticator, "extra_scopes", []),
-                    "confirmation_message": getattr(
+                    extra_scopes=getattr(authenticator, "extra_scopes", []),
+                    confirmation_message=getattr(
                         authenticator, "confirmation_message", None
                     ),
-                }
+                )
             elif isinstance(authenticator, ExternalAuthenticator):
-                spec = {
-                    "provider": provider,
-                    "mode": "external",
-                    "links": {
+                spec = AboutAuthenticationProvider(
+                    provider=provider,
+                    mode="external",
+                    links={
                         "auth_endpoint": f"{base_url}/auth/provider/{provider}/authorize"
                     },
-                    "confirmation_message": getattr(
+                    confirmation_message=getattr(
                         authenticator, "confirmation_message", None
                     ),
-                }
+                )
             else:
                 # It should be impossible to reach here.
                 assert False
             provider_specs.append(spec)
 
+        authentication_links: Optional[AboutAuthenticationLinks] = None
         if provider_specs:
             # If there are *any* authenticaiton providers, these
             # endpoints will be added.
+            assert authenticator is not None
             if isinstance(authenticator, ProxiedOIDCAuthenticator):
                 refresh_session = authenticator.token_endpoint
                 logout_endpoint = authenticator.end_session_endpoint
@@ -268,14 +282,19 @@ def get_router(
                 refresh_session = f"{base_url}/auth/session/refresh"
                 logout_endpoint = f"{base_url}/auth/logout"
 
-            authentication["links"] = {
-                "whoami": f"{base_url}/auth/whoami",
-                "apikey": f"{base_url}/auth/apikey",
-                "refresh_session": refresh_session,
-                "revoke_session": f"{base_url}/auth/session/revoke/{{session_id}}",
-                "logout": logout_endpoint,
-            }
-        authentication["providers"] = provider_specs
+            authentication_links = AboutAuthenticationLinks(
+                whoami=f"{base_url}/auth/whoami",
+                apikey=f"{base_url}/auth/apikey",
+                refresh_session=refresh_session,
+                revoke_session=f"{base_url}/auth/session/revoke/{{session_id}}",
+                logout=logout_endpoint,
+            )
+
+        authentication = AboutAuthentication(
+            required=not settings.allow_anonymous_access,
+            providers=provider_specs,
+            links=authentication_links,
+        )
 
         return json_or_msgpack(
             request,
@@ -550,6 +569,14 @@ def get_router(
             {StructureFamily.array, StructureFamily.sparse},
             getattr(request.app.state, "access_policy", None),
         )
+        if not (
+            entry.structure_family == StructureFamily.array
+            or entry.structure_family == StructureFamily.sparse
+        ):
+            raise HTTPException(
+                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Unexpected structure family {entry.structure_family}",
+            )
         shape, chunks = entry.structure().shape, entry.structure().chunks
         ndim = len(shape)
 
@@ -675,6 +702,14 @@ def get_router(
             {StructureFamily.array, StructureFamily.sparse},
             getattr(request.app.state, "access_policy", None),
         )
+        if not (
+            entry.structure_family == StructureFamily.array
+            or entry.structure_family == StructureFamily.sparse
+        ):
+            raise HTTPException(
+                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Unexpected structure family {entry.structure_family}",
+            )
         structure_family = entry.structure_family
         # Deferred import because this is not a required dependency of the server
         # for some use cases.
@@ -683,7 +718,7 @@ def get_router(
         try:
             with record_timing(request.state.metrics, "read"):
                 array = await ensure_awaitable(entry.read, slice)
-            if structure_family == StructureFamily.array:
+            if entry.structure_family == StructureFamily.array:
                 # Force dask or PIMS or ... to do I/O. Ensure dtype is preserved.
                 array = numpy.asarray(
                     array, dtype=entry.structure().data_type.to_numpy_dtype()
@@ -745,7 +780,7 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )
-        await entry.close_stream()
+        await getattr(entry, "close_stream")()
 
     @router.websocket("/stream/single/{path:path}")
     async def websocket_endpoint(
@@ -831,7 +866,7 @@ def get_router(
         path_parts = [segment for segment in path.split("/") if segment]
         path_str = "/".join(path_parts)
         uri = f"{base_websocket_url.replace(scheme=scheme)}/array/full/{path_str}"
-        handler = entry.make_ws_handler(websocket, formatter, uri)
+        handler = getattr(entry, "make_ws_handler")(websocket, formatter, uri)
         await handler(start, already_accepted=needs_first_message_auth)
 
     @router.get(
@@ -863,13 +898,20 @@ def get_router(
             structure_families={StructureFamily.ragged},
             access_policy=getattr(request.app.state, "access_policy", None),
         )
+        if entry.structure_family != StructureFamily.ragged:
+            raise HTTPException(
+                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Unexpected structure family {entry.structure_family}",
+            )
         structure_family = entry.structure_family
 
         from ..structures.ragged import CanonicalRaggedArray, RaggedSlicingError
 
         try:
             with record_timing(request.state.metrics, "read"):
-                array: CanonicalRaggedArray = await ensure_awaitable(entry.read, slice)
+                array = CanonicalRaggedArray(
+                    await ensure_awaitable(entry.read, slice)
+                )
         except RaggedSlicingError as err:
             raise HTTPException(
                 status_code=HTTP_422_UNPROCESSABLE_CONTENT,
@@ -879,7 +921,7 @@ def get_router(
                 ),
             ) from err
 
-        if array._impl.nbytes > settings.response_bytesize_limit:
+        if getattr(array._impl, "nbytes") > settings.response_bytesize_limit:
             raise HTTPException(
                 status_code=HTTP_400_BAD_REQUEST,
                 detail=(
@@ -929,7 +971,8 @@ def get_router(
             {StructureFamily.ragged},
             getattr(request.app.state, "access_policy", None),
         )
-        if not hasattr(entry, "write"):
+        write = getattr(entry, "write", None)
+        if write is None:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node cannot accept array data.",
@@ -939,9 +982,7 @@ def get_router(
         deserializer = deserialization_registry.dispatch("ragged", media_type)
 
         body = await request.body()
-        await ensure_awaitable(
-            entry.write, media_type, deserializer, entry, body, persist
-        )
+        await ensure_awaitable(write, media_type, deserializer, entry, body, persist)
 
         return json_or_msgpack(request, None)
 
@@ -970,7 +1011,8 @@ def get_router(
             {StructureFamily.ragged},
             getattr(request.app.state, "access_policy", None),
         )
-        if not hasattr(entry, "write_block"):
+        write_block = getattr(entry, "write_block", None)
+        if write_block is None:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node cannot accept blocks of ragged array data.",
@@ -981,7 +1023,7 @@ def get_router(
 
         body = await request.body()
         await ensure_awaitable(
-            entry.write_block, block, media_type, deserializer, entry, body, persist
+            write_block, block, media_type, deserializer, entry, body, persist
         )
 
         return json_or_msgpack(request, None)
@@ -1024,7 +1066,7 @@ def get_router(
             {StructureFamily.ragged},
             getattr(request.app.state, "access_policy", None),
         )
-        if not hasattr(entry, "patch"):
+        if not isinstance(entry, CatalogRaggedAdapter):
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support patching ragged array data.",
@@ -1168,6 +1210,11 @@ def get_router(
         """
         Fetch a partition (continuous block of rows) from a DataFrame.
         """
+        if entry.structure_family != StructureFamily.table:
+            raise HTTPException(
+                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Unexpected structure family {entry.structure_family}",
+            )
         try:
             # The singular/plural mismatch here of "fields" and "field" is
             # due to the ?field=A&field=B&field=C... encodes in a URL.
@@ -1304,6 +1351,11 @@ def get_router(
         """
         Fetch the data for the given table.
         """
+        if entry.structure_family != StructureFamily.table:
+            raise HTTPException(
+                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Unexpected structure family {entry.structure_family}",
+            )
         try:
             with record_timing(request.state.metrics, "read"):
                 data = await ensure_awaitable(entry.read, column)
@@ -1509,6 +1561,14 @@ def get_router(
             {StructureFamily.table, StructureFamily.container},
             getattr(request.app.state, "access_policy", None),
         )
+        if not (
+            entry.structure_family == StructureFamily.table
+            or entry.structure_family == StructureFamily.container
+        ):
+            raise HTTPException(
+                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Unexpected structure family {entry.structure_family}",
+            )
         try:
             with record_timing(request.state.metrics, "read"):
                 data = await ensure_awaitable(entry.read, field)
@@ -1733,6 +1793,11 @@ def get_router(
             {StructureFamily.awkward},
             getattr(request.app.state, "access_policy", None),
         )
+        if entry.structure_family != StructureFamily.awkward:
+            raise HTTPException(
+                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Unexpected structure family {entry.structure_family}",
+            )
         structure_family = entry.structure_family
         # Deferred import because this is not a required dependency of the server
         # for some use cases.
@@ -1794,8 +1859,11 @@ def get_router(
         for data_source in body.data_sources:
             if data_source.assets:
                 raise HTTPException(
-                    "Externally-managed assets cannot be registered "
-                    "using POST /metadata/{path}. Use POST /register/{path} instead."
+                    status_code=HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "Externally-managed assets cannot be registered "
+                        "using POST /metadata/{path}. Use POST /register/{path} instead."
+                    ),
                 )
         if body.data_sources and not getattr(entry, "writable", False):
             raise HTTPException(
@@ -1957,14 +2025,10 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )
-        patch_params = {
-            "shape": patch_shape,
-            "offset": patch_offset,
-        }
-        if all(value is None for value in patch_params.values()):
+        if patch_shape is None and patch_offset is None:
             patch = None
-        elif all(value is not None for value in patch_params.values()):
-            patch = ArrayPatch(**patch_params)
+        elif patch_shape is not None and patch_offset is not None:
+            patch = ArrayPatch(shape=patch_shape, offset=patch_offset)
         else:
             raise HTTPException(
                 status_code=HTTP_400_BAD_REQUEST,
@@ -1973,16 +2037,19 @@ def get_router(
                     "go together; either all or none must be specified."
                 ),
             )
+        if not isinstance(entry, CatalogNodeAdapter):
+            raise HTTPException(
+                status_code=HTTP_405_METHOD_NOT_ALLOWED,
+                detail="This node does not support data sources.",
+            )
         await entry.put_data_source(data_source=body.data_source, patch=patch)
 
     @router.delete("/metadata/{path:path}")
     async def delete(
         request: Request,
         path: str,
-        recursive: Optional[bool] = Query(
-            False, description="Delete children recursively"
-        ),
-        external_only: Optional[bool] = Query(
+        recursive: bool = Query(False, description="Delete children recursively"),
+        external_only: bool = Query(
             True,
             description=(
                 "Delete the node, but only if this would not "
@@ -2008,7 +2075,7 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )
-        if hasattr(entry, "delete"):
+        if isinstance(entry, CatalogNodeAdapter):
             await entry.delete(recursive=recursive, external_only=external_only)
         else:
             raise HTTPException(
@@ -2042,7 +2109,7 @@ def get_router(
             getattr(request.app.state, "access_policy", None),
         )
         body = await request.body()
-        if not hasattr(entry, "write"):
+        if not isinstance(entry, CatalogArrayAdapter):
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node cannot accept array data.",
@@ -2084,7 +2151,7 @@ def get_router(
             {StructureFamily.array, StructureFamily.sparse},
             getattr(request.app.state, "access_policy", None),
         )
-        if not hasattr(entry, "write_block"):
+        if not isinstance(entry, CatalogArrayAdapter):
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node cannot accept array data.",
@@ -2138,7 +2205,7 @@ def get_router(
             {StructureFamily.array},
             getattr(request.app.state, "access_policy", None),
         )
-        if not hasattr(entry, "patch"):
+        if not isinstance(entry, CatalogArrayAdapter):
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node cannot accept array data.",
@@ -2184,7 +2251,7 @@ def get_router(
             {StructureFamily.table},
             getattr(request.app.state, "access_policy", None),
         )
-        if not hasattr(entry, "write"):
+        if not isinstance(entry, CatalogTableAdapter):
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support writing.",
@@ -2221,7 +2288,7 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )
-        if not hasattr(entry, "write_partition"):
+        if not isinstance(entry, CatalogTableAdapter):
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not supporting writing a partition.",
@@ -2260,7 +2327,7 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )
-        if not hasattr(entry, "write_partition"):
+        if not isinstance(entry, CatalogTableAdapter):
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not supporting writing a partition.",
@@ -2299,10 +2366,16 @@ def get_router(
             getattr(request.app.state, "access_policy", None),
         )
         body = await request.body()
-        if not hasattr(entry, "write"):
+        write = getattr(entry, "write", None)
+        if write is None:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node cannot be written to.",
+            )
+        if entry.structure_family != StructureFamily.awkward:
+            raise HTTPException(
+                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Unexpected structure family {entry.structure_family}",
             )
         media_type = request.headers["content-type"]
         deserializer = deserialization_registry.dispatch(
@@ -2312,7 +2385,7 @@ def get_router(
         data = await ensure_awaitable(
             deserializer, body, structure.form, structure.length
         )
-        await ensure_awaitable(entry.write, data)
+        await ensure_awaitable(write, data)
         return json_or_msgpack(request, None)
 
     @router.patch("/metadata/{path:path}", response_model=schemas.PatchMetadataResponse)
@@ -2341,7 +2414,7 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )
-        if not hasattr(entry, "replace_metadata"):
+        if not isinstance(entry, CatalogNodeAdapter):
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support update of metadata.",
@@ -2372,6 +2445,11 @@ def get_router(
                 status_code=HTTP_406_NOT_ACCEPTABLE,
                 detail=f"valid content types: {', '.join(patch_mimetypes)}",
             )
+
+        # JSON Patch "add"/"replace" operations may have inserted raw
+        # {"name": ..., "version": ...} dicts (from the patch's "value"
+        # field) alongside untouched Spec instances; normalize to Spec.
+        specs = [spec if isinstance(spec, Spec) else Spec(**spec) for spec in specs]
 
         # Manually validate limits that bypass pydantic validation via patch
         if len(specs) > schemas.MAX_ALLOWED_SPECS:
@@ -2449,7 +2527,7 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )
-        if not hasattr(entry, "replace_metadata"):
+        if not isinstance(entry, CatalogNodeAdapter):
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support update of metadata.",
@@ -2564,7 +2642,7 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )
-        if not hasattr(entry, "revisions"):
+        if not isinstance(entry, CatalogNodeAdapter):
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support a del request for revisions.",
@@ -2607,7 +2685,7 @@ def get_router(
                     "downloading raw assets."
                 ),
             )
-        if not hasattr(entry, "asset_by_id"):
+        if not isinstance(entry, CatalogNodeAdapter):
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support downloading assets.",
@@ -2644,19 +2722,22 @@ def get_router(
                 status_code=HTTP_400_BAD_REQUEST,
                 detail="Only download assets stored as file:// is currently supported.",
             )
-        path = path_from_uri(asset.data_uri)
+        file_path = path_from_uri(asset.data_uri)
         if relative_path is not None:
             # Be doubly sure that this is under the Asset's data_uri directory
             # and not sneakily escaping it.
-            if not os.path.commonpath([path, path / relative_path]) != path:
+            if (
+                not os.path.commonpath([file_path, file_path / relative_path])
+                != file_path
+            ):
                 # This should not be possible.
                 raise RuntimeError(
-                    f"Refusing to serve {path / relative_path} because it is outside "
-                    "of the Asset's directory"
+                    f"Refusing to serve {file_path / relative_path} because it is "
+                    "outside of the Asset's directory"
                 )
-            full_path = path / relative_path
+            full_path = file_path / relative_path
         else:
-            full_path = path
+            full_path = file_path
         stat_result = await anyio.to_thread.run_sync(os.stat, full_path)
         filename = full_path.name
         return FileResponse(
@@ -2698,7 +2779,7 @@ def get_router(
                     "downloading raw assets."
                 ),
             )
-        if not hasattr(entry, "asset_by_id"):
+        if not isinstance(entry, CatalogNodeAdapter):
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support downloading assets.",
@@ -2720,17 +2801,17 @@ def get_router(
                 status_code=HTTP_400_BAD_REQUEST,
                 detail="Only download assets stored as file:// is currently supported.",
             )
-        path = path_from_uri(asset.data_uri)
+        file_path = path_from_uri(asset.data_uri)
         manifest = []
         # Walk the directory and any subdirectories. Aggregate a list of all the
         # files, given as paths relative to the directory root.
-        for root, _directories, files in os.walk(path):
+        for root, _directories, files in os.walk(file_path):
             manifest.extend(Path(root, file) for file in files)
         return json_or_msgpack(request, {"manifest": manifest})
 
     async def validate_specs(
         specs: List[Spec],
-        metadata: dict,
+        metadata: Mapping,
         entry: Optional[AnyAdapter] = None,
         structure_family: Optional[StructureFamily] = None,
         structure: Optional[dict] = None,

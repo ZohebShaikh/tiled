@@ -2,6 +2,7 @@ import hashlib
 import secrets
 import uuid as uuid_module
 import warnings
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Any, Callable, List, Optional, Sequence
@@ -266,7 +267,7 @@ async def get_access_tags_from_api_key(
 async def get_current_access_tags(
     request: Request,
     api_key: Optional[str] = Depends(get_api_key),
-    db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+    db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
         get_database_session_factory
     ),
 ) -> Optional[AccessTags]:
@@ -314,7 +315,7 @@ def get_decoded_access_token_websocket(
 async def get_current_access_tags_websocket(
     websocket: WebSocket,
     api_key: Optional[str] = Depends(get_api_key_websocket),
-    db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+    db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
         get_database_session_factory
     ),
 ) -> Optional[AccessTags]:
@@ -404,7 +405,7 @@ async def get_current_scopes(
     decoded_access_token: Optional[dict[str, Any]] = Depends(get_decoded_access_token),
     api_key: Optional[str] = Depends(get_api_key),
     settings: Settings = Depends(get_settings),
-    db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+    db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
         get_database_session_factory
     ),
 ) -> set[str]:
@@ -442,7 +443,7 @@ async def get_current_scopes_websocket(
     api_key: Optional[str] = Depends(get_api_key_websocket),
     decoded_access_token: Optional[dict] = Depends(get_decoded_access_token_websocket),
     settings: Settings = Depends(get_settings),
-    db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+    db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
         get_database_session_factory
     ),
 ) -> set[str]:
@@ -623,7 +624,7 @@ async def get_current_principal_websocket(
     access_token: Optional[str] = Query(None),
     decoded_access_token: Optional[dict] = Depends(get_decoded_access_token_websocket),
     settings: Settings = Depends(get_settings),
-    db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+    db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
         get_database_session_factory
     ),
 ):
@@ -683,7 +684,7 @@ async def get_current_principal(
     decoded_access_token: str = Depends(get_decoded_access_token),
     api_key: str = Depends(get_api_key),
     settings: Settings = Depends(get_settings),
-    db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+    db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
         get_database_session_factory
     ),
     _=Depends(move_api_key),
@@ -909,7 +910,7 @@ def add_external_routes(
         request: Request,
         response: Response,
         settings: Settings = Depends(get_settings),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):
@@ -980,7 +981,7 @@ def add_external_routes(
     @router.post(f"/provider/{provider}/authorize")
     async def device_code_authorize_route(
         request: Request,
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):
@@ -1034,7 +1035,7 @@ def add_external_routes(
         code: str = Form(),
         user_code: str = Form(),
         settings: Settings = Depends(get_settings),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):
@@ -1099,7 +1100,7 @@ def add_external_routes(
         request: Request,
         body: schemas.DeviceCode,
         settings: Settings = Depends(get_settings),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):
@@ -1143,7 +1144,7 @@ def add_internal_routes(
         request: Request,
         form_data: OAuth2PasswordRequestForm = Depends(),
         settings: Settings = Depends(get_settings),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):
@@ -1252,7 +1253,7 @@ def authentication_router() -> APIRouter:
         ),
         principal: Optional[schemas.Principal] = Depends(get_current_principal),
         _=Security(check_scopes, scopes=["read:principals"]),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):
@@ -1293,7 +1294,7 @@ def authentication_router() -> APIRouter:
         request: Request,
         principal: Optional[schemas.Principal] = Depends(get_current_principal),
         _=Security(check_scopes, scopes=["write:principals"]),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
         role: str = Query(...),
@@ -1330,7 +1331,7 @@ def authentication_router() -> APIRouter:
         request: Request,
         uuid: uuid_module.UUID,
         _=Security(check_scopes, scopes=["read:principals"]),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):
@@ -1369,7 +1370,7 @@ def authentication_router() -> APIRouter:
         uuid: uuid_module.UUID,
         first_eight: str,
         _=Security(check_scopes, scopes=["admin:apikeys"]),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):
@@ -1401,7 +1402,7 @@ def authentication_router() -> APIRouter:
         apikey_params: schemas.APIKeyRequestParams,
         principal: Optional[schemas.Principal] = Depends(get_current_principal),
         _=Security(check_scopes, scopes=["admin:apikeys"]),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):
@@ -1424,7 +1425,7 @@ def authentication_router() -> APIRouter:
         request: Request,
         refresh_token: schemas.RefreshToken,
         settings: Settings = Depends(get_settings),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):
@@ -1439,7 +1440,7 @@ def authentication_router() -> APIRouter:
         request: Request,
         refresh_token: schemas.RefreshToken,
         settings: Settings = Depends(get_settings),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):
@@ -1464,7 +1465,7 @@ def authentication_router() -> APIRouter:
         session_id: str,  # from path parameter
         request: Request,
         principal: Optional[schemas.Principal] = Depends(get_current_principal),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):
@@ -1559,7 +1560,7 @@ def authentication_router() -> APIRouter:
         apikey_params: schemas.APIKeyRequestParams,
         principal: Optional[schemas.Principal] = Depends(get_current_principal),
         _=Security(check_scopes, scopes=["create:apikeys"]),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):
@@ -1585,7 +1586,7 @@ def authentication_router() -> APIRouter:
     async def current_apikey_info(
         request: Request,
         api_key: str = Depends(get_api_key),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):
@@ -1624,7 +1625,7 @@ def authentication_router() -> APIRouter:
         first_eight: str,
         principal: Optional[schemas.Principal] = Depends(get_current_principal),
         _=Security(check_scopes, scopes=["revoke:apikeys"]),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):
@@ -1656,7 +1657,7 @@ def authentication_router() -> APIRouter:
     async def whoami(
         request: Request,
         principal: Optional[schemas.Principal] = Depends(get_current_principal),
-        db_factory: Callable[[], Optional[AsyncSession]] = Depends(
+        db_factory: Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]] = Depends(
             get_database_session_factory
         ),
     ):

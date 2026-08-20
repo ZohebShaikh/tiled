@@ -1,6 +1,6 @@
 from abc import abstractmethod
 from collections.abc import Mapping
-from typing import Any, Dict, List, Literal, Optional, Protocol, Set, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Protocol, Set, Union
 
 import dask.dataframe
 import pandas
@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 
 from tiled.structures.ragged import RaggedStructure
 
-from ..ndslice import NDSlice
+from ..ndslice import NDBlock, NDSlice
 from ..storage import Storage
 from ..structures.array import ArrayStructure
 from ..structures.awkward import AwkwardStructure
@@ -28,9 +28,7 @@ class BaseAdapter(Protocol):
     def metadata(self) -> JSON:
         pass
 
-    @abstractmethod
-    def specs(self) -> List[Spec]:
-        pass
+    specs: List[Spec]
 
 
 class ContainerAdapter(Mapping[str, "AnyAdapter"], BaseAdapter):
@@ -38,6 +36,10 @@ class ContainerAdapter(Mapping[str, "AnyAdapter"], BaseAdapter):
 
     @abstractmethod
     def structure(self) -> None:
+        pass
+
+    @abstractmethod
+    def read(self, fields: Optional[List[str]] = None) -> Any:
         pass
 
 
@@ -49,12 +51,13 @@ class ArrayAdapter(BaseAdapter, Protocol):
         pass
 
     @abstractmethod
-    def read(self, slice: NDSlice) -> NDArray[Any]:
+    def read(self, slice: NDSlice = NDSlice(...)) -> NDArray[Any]:
         pass
 
-    # TODO Fix slice
     @abstractmethod
-    def read_block(self, block: Tuple[int, ...]) -> NDArray[Any]:
+    def read_block(
+        self, block: NDBlock, slice: NDSlice = NDSlice(...)
+    ) -> NDArray[Any]:
         pass
 
 
@@ -93,12 +96,14 @@ class SparseAdapter(BaseAdapter, Protocol):
     def structure(self) -> SparseStructure:
         pass
 
-    # TODO Fix slice (just like array)
-    def read(self, slice: NDSlice) -> sparse.COO:
+    @abstractmethod
+    def read(self, slice: NDSlice = NDSlice(...)) -> sparse.COO:
         pass
 
-    # TODO Fix slice (just like array)
-    def read_block(self, block: Tuple[int, ...]) -> sparse.COO:
+    @abstractmethod
+    def read_block(
+        self, block: NDBlock, slice: NDSlice = NDSlice(...)
+    ) -> sparse.COO:
         pass
 
 
@@ -111,7 +116,7 @@ class TableAdapter(BaseAdapter, Protocol):
 
     @abstractmethod
     def read(
-        self, fields: List[str]
+        self, fields: Optional[List[str]] = None
     ) -> Union[dask.dataframe.DataFrame, pandas.DataFrame]:
         pass
 

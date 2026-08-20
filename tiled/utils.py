@@ -17,7 +17,17 @@ import threading
 import warnings
 from collections import namedtuple
 from pathlib import Path
-from typing import Any, Callable, Generic, Iterator, Optional, Tuple, TypeVar, Union
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Generic,
+    Iterator,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+)
 from urllib.parse import urlparse, urlunparse
 
 import anyio
@@ -772,7 +782,9 @@ def is_coroutine_callable(call: Callable[..., Any]) -> bool:
     return inspect.iscoroutinefunction(dunder_call)
 
 
-async def ensure_awaitable(func, *args, **kwargs):
+async def ensure_awaitable(
+    func: Callable[..., Union[T, Awaitable[T]]], *args: Any, **kwargs: Any
+) -> T:
     if is_coroutine_callable(func):
         return await func(*args, **kwargs)
     else:

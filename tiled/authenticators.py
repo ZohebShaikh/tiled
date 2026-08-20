@@ -7,7 +7,7 @@ import secrets
 import uuid
 from collections.abc import Iterable
 from datetime import timedelta
-from typing import Any, Dict, List, Mapping, Optional, cast
+from typing import Any, Dict, List, Mapping, Optional, Union, cast
 
 import httpx
 from cachetools import TTLCache, cached
@@ -617,7 +617,7 @@ class SAMLAuthenticator(ExternalAuthenticator):
 async def prepare_saml_from_fastapi_request(request: Request) -> Mapping[str, str]:
     form_data = await request.form()
     rv = {
-        "http_host": request.client.host,
+        "http_host": request.client.host if request.client else "",
         "server_port": request.url.port,
         "script_name": request.url.path,
         "post_data": {},
@@ -826,26 +826,26 @@ class LDAPAuthenticator(InternalAuthenticator):
     def __init__(
         self,
         server_address,
-        server_port=None,
+        server_port: Optional[int] = None,
         *,
         use_ssl=False,
         use_tls=True,
         connect_timeout=5,
         receive_timeout=60,
-        bind_dn_template=None,
-        allowed_groups=None,
+        bind_dn_template: Optional[Union[str, List[str]]] = None,
+        allowed_groups: Optional[List[str]] = None,
         valid_username_regex=r"^[a-z][.a-z0-9_-]*$",
         lookup_dn=False,
-        user_search_base=None,
-        user_attribute=None,
+        user_search_base: Optional[str] = None,
+        user_attribute: Optional[str] = None,
         lookup_dn_search_filter="({login_attr}={login})",
-        lookup_dn_search_user=None,
-        lookup_dn_search_password=None,
-        lookup_dn_user_dn_attribute=None,
+        lookup_dn_search_user: Optional[str] = None,
+        lookup_dn_search_password: Optional[str] = None,
+        lookup_dn_user_dn_attribute: Optional[str] = None,
         escape_userdn=False,
         search_filter="",
-        attributes=None,
-        auth_state_attributes=None,
+        attributes: Optional[List[str]] = None,
+        auth_state_attributes: Optional[List[str]] = None,
         use_lookup_dn_username=True,
         confirmation_message="",
     ):
@@ -899,6 +899,7 @@ class LDAPAuthenticator(InternalAuthenticator):
 
     async def resolve_username(self, username_supplied_by_user):
         import ldap3
+        import ldap3.utils.conv
 
         search_dn = self.lookup_dn_search_user
         if self.escape_userdn:
@@ -1039,6 +1040,8 @@ class LDAPAuthenticator(InternalAuthenticator):
         self, username: str, password: str
     ) -> Optional[UserSessionState]:
         import ldap3
+        import ldap3.core.exceptions
+        import ldap3.utils.conv
 
         username_saved = username  # Save the user name passed as a parameter
 
@@ -1079,6 +1082,8 @@ class LDAPAuthenticator(InternalAuthenticator):
                 bind_dn_template = [resolved_dn]
 
         is_bound = False
+        conn: Any = None
+        userdn: Optional[str] = None
         for dn in bind_dn_template:
             if not dn:
                 logger.warning("Ignoring blank 'bind_dn_template' entry!")
@@ -1116,6 +1121,8 @@ class LDAPAuthenticator(InternalAuthenticator):
             msg = "Invalid password for user '{username}'"
             logger.warning(msg.format(username=username))
             return None
+        assert conn is not None
+        assert userdn is not None
 
         if self.search_filter:
             search_filter = self.search_filter.format(

@@ -79,7 +79,7 @@ def raise_for_status(response) -> None:
     raise httpx.HTTPStatusError(message, request=request, response=response)
 
 
-def handle_error(response):
+def handle_error(response: httpx.Response) -> httpx.Response:
     if not response.is_error:
         return response
     try:
@@ -107,6 +107,8 @@ def handle_error(response):
             raise ClientError(message, exc.request, exc.response) from exc
         else:
             raise
+    # response.is_error (checked above) implies raise_for_status() always raises.
+    raise AssertionError("unreachable")
 
 
 class ClientError(httpx.HTTPStatusError):
@@ -246,13 +248,13 @@ def polling_retry_context(timeout: float):
 
 
 class TiledResponse(httpx.Response):
-    def json(self):
+    def json(self, **kwargs):
         if self.headers["Content-Type"] == MSGPACK_MIME_TYPE:
             return msgpack.unpackb(
                 self.content,
                 timestamp=3,  # Decode msgpack Timestamp as datetime.datetime object.
             )
-        return super().json()
+        return super().json(**kwargs)
 
 
 class UnknownStructureFamily(KeyError):
@@ -306,8 +308,8 @@ def export_util(file, format, get, link, params):
                         },
                     )
                 ).read()
-        with open(file, "wb") as buffer:
-            buffer.write(content)
+                with open(file, "wb") as buffer:
+                    buffer.write(content)
     else:
         # Infer that `file` is a writeable buffer.
         if format is None:
@@ -325,7 +327,7 @@ def export_util(file, format, get, link, params):
                         },
                     )
                 ).read()
-        file.write(content)
+                file.write(content)
 
 
 def client_for_item(
@@ -550,7 +552,7 @@ def is_interactive():
 
     if importlib.util.find_spec("IPython"):
         # IPython is installed
-        from IPython import get_ipython
+        from IPython.core.getipython import get_ipython
 
         if get_ipython():
             return True  # This Python process is an IPython process
@@ -564,7 +566,7 @@ def is_jupyter():
 
     if importlib.util.find_spec("IPython"):
         # IPython is installed
-        from IPython import get_ipython
+        from IPython.core.getipython import get_ipython
 
         if ip := get_ipython():
             if "ZMQInteractiveShell" in type(ip).__name__:
@@ -679,7 +681,7 @@ class StandaloneRetryIndicator:
         if self._live is not None:
             if is_jupyter():
                 try:
-                    self._live.close()
+                    self._live.stop()
                 except Exception:
                     pass
             else:
