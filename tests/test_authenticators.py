@@ -4,7 +4,7 @@ import os
 import time
 from typing import Any, Tuple
 
-import httpx
+import httpx2 as httpx
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException

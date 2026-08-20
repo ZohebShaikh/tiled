@@ -9,7 +9,7 @@ from collections.abc import Iterable
 from datetime import timedelta
 from typing import Any, Dict, List, Mapping, Optional, cast
 
-import httpx
+import httpx2 as httpx
 from cachetools import TTLCache, cached
 from fastapi import APIRouter, Request
 from fastapi.security import OAuth2, OAuth2AuthorizationCodeBearer

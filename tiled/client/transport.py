@@ -4,7 +4,7 @@ in accordance with its BSD-3 license
 """
 import typing as tp
 
-import httpx
+import httpx2 as httpx
 
 from .cache import Cache
 from .cache_control import ByteStreamWrapper, CacheControl
