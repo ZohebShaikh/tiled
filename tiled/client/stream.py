@@ -1,6 +1,7 @@
 import abc
 import concurrent.futures
 import inspect
+import json
 import logging
 import sys
 import threading
@@ -131,6 +132,15 @@ class _RegularWebsocketWrapper:
             str(self._uri.copy_with(params=params)),
             additional_headers=headers,
             max_size=max_size,
+        )
+        access_token = None
+        if self._http_client.auth is not None:
+            access_token = self._http_client.auth.sync_get_token(
+                "access_token", reload_from_disk=True
+            )
+            print(f"{access_token=}")
+        self._websocket.send(
+            json.dumps({"type": "auth", "access_token": access_token})
         )
 
     def recv(self, timeout=None):

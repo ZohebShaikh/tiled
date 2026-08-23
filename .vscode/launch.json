@@ -34,7 +34,7 @@
           "config","${input:config_path}",
           "--host", "127.0.0.1",
           "--port", "8407",
-          "--log-config", "example_log_config.yml"
+          // "--log-config", "example_log_config.yml"
           // "--scalable"
         ],
         "env": {

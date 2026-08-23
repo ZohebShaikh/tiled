@@ -14,8 +14,10 @@ authentication:
         confirmation_message: "You have logged in with authn.diamond.ac.uk as {id}."
         redirect_on_success: "http://localhost:8407/ui/auth-callback"
         user_id_claim: fedid
+        scopes_map:
+          read: ["read:metadata", "read:data"]
+          write: ["write:metadata", "write:data","create:node","register"]
         allow_ui_login: False
-        check_authn_scopes: False
 trees:
   - path: /
     tree: catalog
@@ -23,6 +25,9 @@ trees:
       uri: postgresql://tiled:${POSTGRES_PASSWORD}@localhost:5432/tiled_catalog
       writable_storage: postgresql://tiled:${POSTGRES_PASSWORD}@localhost:5432/data
       init_if_not_exists: true
+
+streaming_cache:
+  uri: redis://localhost:6379
 
 access_control:
   access_policy: "tiled_policy.example_pdp:DiamondOpenPolicyAgentAuthorizationPolicy"
