@@ -63,7 +63,7 @@ async def close_database_connection_pool(database_settings: DatabaseSettings):
 
 def get_database_engine(
     settings: Union[Settings, DatabaseSettings] = Depends(get_settings),
-) -> AsyncEngine:
+) -> Optional[AsyncEngine]:
     database_settings = (
         settings.database_settings if isinstance(settings, Settings) else settings
     )
@@ -77,7 +77,7 @@ def get_database_engine(
 
 
 async def get_database_session_factory(
-    engine: AsyncEngine = Depends(get_database_engine),
+    engine: Optional[AsyncEngine] = Depends(get_database_engine),
 ) -> AsyncGenerator[Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]]]:
     # Special case for single-user mode
     if engine is None:
@@ -89,6 +89,22 @@ async def get_database_session_factory(
         # Let the caller manage the lifecycle of the AsyncSession.
         def f():
             return AsyncSession(engine, autoflush=False, expire_on_commit=False)
+
+    yield f
+
+
+async def get_authentication_database_session_factory(
+    engine: Optional[AsyncEngine] = Depends(get_database_engine),
+) -> AsyncGenerator[Callable[[], AsyncSession]]:
+    # Authentication routes are only mounted when authenticators are configured,
+    # and build_app always configures a database in that case.
+    if engine is None:
+        raise RuntimeError(
+            "Authentication routes require a database, but none is configured."
+        )
+
+    def f():
+        return AsyncSession(engine, autoflush=False, expire_on_commit=False)
 
     yield f
 
