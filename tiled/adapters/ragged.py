@@ -43,7 +43,7 @@ class RaggedAdapter(Adapter[RaggedStructure]):
 
     def __init__(
         self,
-        array: ragged.array | None,
+        array: ragged.array,
         structure: RaggedStructure,
         *,
         metadata: JSON | None = None,
@@ -106,7 +106,7 @@ class RaggedSQLAdapter(Adapter[RaggedStructure]):
     ) -> DataSource[TableStructure]:
         "Convert a DataSource with a RaggedStructure to one with a TableStructure"
         awkward_schema = data_source.structure.awkward_form.expected_from_buffers()
-        empty_table_dict = {
+        empty_table_dict: dict[str, list[Any]] = {
             col: [numpy.empty(0, dtype=typ)] for col, typ in awkward_schema.items()
         }
         empty_table_dict["chunk_index"] = [numpy.int64(0)]
@@ -299,8 +299,10 @@ class RaggedSQLAdapter(Adapter[RaggedStructure]):
             raise ValueError("`offset` must contain at least one dimension")
 
         ndim_fixed = self.structure().ndim_fixed
+        current_length = self.structure().shape[0]
         if (
-            (offset[0] != self.structure().shape[0])
+            current_length is None
+            or (offset[0] != current_length)
             or any(offset[1:])
             or (len(offset) > ndim_fixed)
         ):
@@ -340,13 +342,15 @@ class RaggedSQLAdapter(Adapter[RaggedStructure]):
 
         # Update the structure to reflect the new data
         self._structure.shape = (
-            self._structure.shape[0] + length,
+            current_length + length,
             *self._structure.shape[1:],
         )
         self._structure.chunks = (
             (self._structure.chunks[0] or ()) + (length,),
             *self._structure.chunks[1:],
         )
+        # ragged annotates size as Optional, but it is never None.
+        assert data.size is not None
         self._structure.size += data.size
 
         return self._structure

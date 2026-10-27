@@ -1,8 +1,6 @@
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
-import dask.dataframe
 import numpy
-import pandas
 import sparse
 from numpy._typing import NDArray
 
@@ -26,7 +24,7 @@ class COOAdapter(SparseAdapter):
     def from_arrays(
         cls,
         coords: NDArray[Any],
-        data: Union[dask.dataframe.DataFrame, pandas.DataFrame],
+        data: NDArray[Any],
         shape: Tuple[int, ...],
         dims: Optional[Tuple[str, ...]] = None,
         *,

@@ -1,13 +1,14 @@
 import math
 from collections import defaultdict
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Optional, Tuple, overload
 
-import dask.array
 import numpy as np
+from numpy.typing import NDArray
 
 from tiled.adapters.core import A, S
 
 from ..structures.data_source import DataSource
+from ..type_aliases import ArrayLikeObject
 
 # for back-compat
 from ..utils import IndexersMixin
@@ -101,9 +102,17 @@ class IncompatibleShapeError(ShapeMismatchError):
     """
 
 
+@overload
 def force_reshape(
-    arr: Union[np.array, dask.array.Array], desired_shape: Tuple[int, ...]
-) -> Union[np.array, dask.array.Array]:
+    arr: NDArray[Any], desired_shape: Tuple[int, ...]
+) -> NDArray[Any]: ...
+@overload
+def force_reshape(
+    arr: ArrayLikeObject, desired_shape: Tuple[int, ...]
+) -> ArrayLikeObject: ...
+def force_reshape(
+    arr: ArrayLikeObject, desired_shape: Tuple[int, ...]
+) -> ArrayLikeObject:
     """Reshape a numpy or dask array to match the desired shape, if possible.
 
     Parameters
@@ -136,10 +145,11 @@ def force_reshape(
     if trailing_match and arr.shape[0] > desired_shape[0]:
         return arr[: desired_shape[0]]
 
-    if arr.size == math.prod(desired_shape):
+    if math.prod(arr.shape) == math.prod(desired_shape):
         # Total size matches: a genuine, well-defined reshape, e.g. serving a
         # `(6, 200, 300)` array as `(3, 2, 200, 300)`.
-        return arr.reshape(desired_shape)
+        # Dispatches to dask (via __array_function__) for lazy arrays.
+        return np.reshape(arr, desired_shape)
 
     if trailing_match and arr.shape[0] < desired_shape[0]:
         # The structure advertises more frames than are available, along the

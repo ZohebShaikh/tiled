@@ -127,6 +127,14 @@ def is_unique_violation(exc: adbc_driver_manager.Error) -> bool:
     return isinstance(exc, adbc_driver_manager.IntegrityError)
 
 
+def _fetchone(cursor: Any) -> Tuple[Any, ...]:
+    "Fetch a row that the preceding statement is guaranteed to return."
+    row = cursor.fetchone()
+    if row is None:
+        raise RuntimeError("Expected the statement to return a row.")
+    return row
+
+
 class SQLAdapter(Adapter[TableStructure]):
     """SQLAdapter Class
 
@@ -307,13 +315,13 @@ class SQLAdapter(Adapter[TableStructure]):
                         "UPDATE _dataset_id_counter SET value = value + 1 "
                         "RETURNING value"
                     )
-                    (dataset_id,) = cursor.fetchone()
+                    (dataset_id,) = _fetchone(cursor)
             else:
                 with conn.cursor() as cursor:
                     cursor.execute("CREATE SEQUENCE IF NOT EXISTS _dataset_id_counter")
                 with conn.cursor() as cursor:
                     cursor.execute("SELECT nextval('_dataset_id_counter')")
-                    (dataset_id,) = cursor.fetchone()
+                    (dataset_id,) = _fetchone(cursor)
             data_source.parameters["dataset_id"] = dataset_id
             conn.commit()
 
@@ -463,8 +471,8 @@ class SQLAdapter(Adapter[TableStructure]):
         self,
         partition: int,
         data: Union[
-            List[pyarrow.record_batch],
-            pyarrow.record_batch,
+            List[pyarrow.RecordBatch],
+            pyarrow.RecordBatch,
             pandas.DataFrame,
             pyarrow.Table,
         ],
@@ -475,21 +483,19 @@ class SQLAdapter(Adapter[TableStructure]):
         ----------
         partition : int
             The partition number to which the data will be appended.
-        data : Union[List[pyarrow.record_batch], pyarrow.record_batch, pandas.DataFrame, pyarrow.Table]
+        data : Union[List[pyarrow.RecordBatch], pyarrow.RecordBatch, pandas.DataFrame, pyarrow.Table]
             data to append to the database.
         """
 
         # Convert the data to pyarrow table
-        if isinstance(data, pyarrow.Table):
-            table = data
+        if isinstance(data, list):
+            table = pyarrow.Table.from_batches(data)
         elif isinstance(data, pandas.DataFrame):
             table = pyarrow.Table.from_pandas(data)
+        elif isinstance(data, pyarrow.Table):
+            table = data
         else:
-            if not isinstance(data, list):
-                batches = [data]
-            else:
-                batches = data
-            table = pyarrow.Table.from_batches(batches)
+            table = pyarrow.Table.from_batches([data])
         # Explicitly cast the table to the structure's schema
         table = table.cast(self.structure().arrow_schema_decoded)
         # Prepend columns for internal dataset_id and partition number.

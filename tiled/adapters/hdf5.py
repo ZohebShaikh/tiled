@@ -1,14 +1,15 @@
 import builtins
+import contextlib
 import copy
 import itertools
 import os
-import sys
 import warnings
 from pathlib import Path
 from typing import Any, Iterator, List, Optional, Tuple, Union
 
 import dask
 import dask.array
+import dask.array.core
 import h5py
 import hdf5plugin  # noqa: F401
 import numpy
@@ -40,7 +41,7 @@ MIN_CHUNK_SIZE = 1  # Minimum chunk size along the concatenation axis
 
 
 def parse_hdf5_tree(
-    tree: Union[h5py.File, h5py.Group, h5py.Dataset],
+    tree: Union[h5py.Group, h5py.Dataset, h5py.Datatype],
 ) -> Union[dict[str, Union[Any, Sentinel]], Sentinel]:
     """Parse an HDF5 file or group into a nested dictionary structure
 
@@ -60,6 +61,8 @@ def parse_hdf5_tree(
 
     if isinstance(tree, h5py.Dataset):
         return HDF5_DATASET
+    if isinstance(tree, h5py.Datatype):
+        raise TypeError(f"Named HDF5 datatypes are not supported: {tree.name}")
 
     for key, val in tree.items():
         res[key] = HDF5_BROKEN_LINK if val is None else parse_hdf5_tree(val)
@@ -98,10 +101,14 @@ def get_hdf5_attrs(
     return d
 
 
-class h5open(h5py.File):  # type: ignore
+@contextlib.contextmanager
+def h5open(
+    filename: Union[str, Path], dataset: Optional[str] = None, **kwargs: Any
+) -> Iterator[Union[h5py.Group, h5py.Dataset, h5py.Datatype]]:
     """A context manager for reading datasets from HDF5 files
 
-    This class is a subclass of h5py.File that allows for reading datasets from HDF5 files using a context manager.
+    Opens the file read-only and yields the requested dataset or group (or the file
+    itself when no dataset is given).
     It raises a BrokenLink exception if a key referencing a dataset (or a group) exists in the file, but the
     referenced object can not be accessed (e.g. if an externally linked file has been removed). In these cases,
     h5py raises a KeyError with following messages:
@@ -115,36 +122,32 @@ class h5open(h5py.File):  # type: ignore
     dataset was never written or has been removed), in which case h5py raises:
     KeyError: "Unable to synchronously open object (object 'y' doesn't exist)"
     """
+    try:
+        with h5py.File(filename, mode="r", **kwargs) as file:
+            yield file[dataset] if dataset else file
+    except KeyError as err:
+        message = str(err)
+        if type(err) is KeyError and (
+            # External link is broken
+            "file" in message
+            # Soft link is broken
+            or "component not found" in message
+            # Registered dataset (or group) is missing from the file
+            or "doesn't exist" in message
+        ):
+            raise BrokenLink(err.args[0]) from err
+        raise
 
-    def __init__(
-        self, filename: Union[str, Path], dataset: Optional[str] = None, **kwargs: Any
-    ) -> None:
-        super().__init__(filename, mode="r", **kwargs)
-        self.dataset = dataset
 
-    def __enter__(self) -> Union[h5py.File, h5py.Group, h5py.Dataset]:
-        super().__enter__()
-        try:
-            return self[self.dataset] if self.dataset else self
-        except Exception:
-            self.__exit__(*sys.exc_info())
-            raise
-
-    def __exit__(self, exc_type, exc_value, exc_tb) -> None:  # type: ignore
-        super().__exit__(exc_type, exc_value, exc_tb)
-
-        if exc_type is KeyError:
-            if "file" in str(exc_value):
-                # External link is broken
-                raise BrokenLink(exc_value.args[0]) from exc_value
-
-            elif "component not found" in str(exc_value):
-                # Soft link is broken
-                raise BrokenLink(exc_value.args[0]) from exc_value
-
-            elif "doesn't exist" in str(exc_value):
-                # Registered dataset (or group) is missing from the file
-                raise BrokenLink(exc_value.args[0]) from exc_value
+@contextlib.contextmanager
+def h5open_dataset(
+    filename: Union[str, Path], dataset: Optional[str] = None, **kwargs: Any
+) -> Iterator[h5py.Dataset]:
+    "Like h5open, but the opened object must be an HDF5 dataset."
+    with h5open(filename, dataset, **kwargs) as node:
+        if not isinstance(node, h5py.Dataset):
+            raise ValueError(f"{dataset!r} in {filename} is not an HDF5 dataset")
+        yield node
 
 
 class HDF5ArrayAdapter(ArrayAdapter):
@@ -161,7 +164,7 @@ class HDF5ArrayAdapter(ArrayAdapter):
         swmr: bool = SWMR_DEFAULT,
         libver: str = "latest",
         locking: Optional[Union[bool, str]] = None,
-    ) -> dask.array.Array:
+    ) -> dask.array.core.Array:
         """Lazily load arrays from possibly multiple HDF5 files and concatenate them along the first axis
 
         The chunks of the resulting Dask array are determined by the chunks of the constituent arrays.
@@ -184,7 +187,7 @@ class HDF5ArrayAdapter(ArrayAdapter):
         def _read_hdf5_array(
             fpath: Union[str, Path], slice: tuple[builtins.slice, ...]
         ) -> NDArray:
-            with h5open(
+            with h5open_dataset(
                 fpath, dataset, swmr=swmr, libver=libver, locking=locking
             ) as ds:
                 return ds[slice]
@@ -192,7 +195,7 @@ class HDF5ArrayAdapter(ArrayAdapter):
         def _get_hdf5_specs(
             fpath: Union[str, Path],
         ) -> Tuple[Tuple[int, ...], Tuple[int, ...], numpy.dtype]:
-            with h5open(
+            with h5open_dataset(
                 fpath, dataset, swmr=swmr, libver=libver, locking=locking
             ) as ds:
                 result = ds.shape, ds.chunks or ds.shape, ds.dtype
@@ -227,7 +230,7 @@ class HDF5ArrayAdapter(ArrayAdapter):
             is_vlen_string = h5py.check_string_dtype(dtype) is not None
 
             def _read_as_bytes(fpath: Union[str, Path]) -> NDArray:
-                with h5open(
+                with h5open_dataset(
                     fpath, dataset, swmr=swmr, libver=libver, locking=locking
                 ) as ds:
                     if is_vlen_string:
@@ -247,11 +250,18 @@ class HDF5ArrayAdapter(ArrayAdapter):
                 stacked = numpy.concatenate(arrays, axis=0)
             else:
                 stacked = arrays[0]
-            return dask.array.from_array(stacked, chunks=stacked.shape)
+            # dask is py.typed but leaves `chunks` unannotated, so pyright
+            # infers `str` from its "auto" default.
+            return dask.array.core.from_array(
+                stacked,
+                chunks=stacked.shape,  # pyright: ignore[reportArgumentType]
+            )
 
         if all((not shp) or (0 in shp) for shp, _, _ in shapes_chunks_dtypes):
             # Treat empty arrays and scalars separately: all shapes are empty or has 0
-            array = dask.array.stack([_read_hdf5_array(fp, ()) for fp in file_paths])
+            array = dask.array.core.stack(
+                [_read_hdf5_array(fp, ()) for fp in file_paths]
+            )
 
         else:
             # Use delayed loading to read and conactenate arrays from multiple files
@@ -319,7 +329,7 @@ class HDF5ArrayAdapter(ArrayAdapter):
 
             # Build the high-level graph and the resulting Dask array
             hlg = HighLevelGraph.from_collections(name, dsk, dependencies=[])
-            array = dask.array.Array(hlg, name, chunks=chunks_final, dtype=dtype)
+            array = dask.array.core.Array(hlg, name, chunks=chunks_final, dtype=dtype)
 
         return array
 

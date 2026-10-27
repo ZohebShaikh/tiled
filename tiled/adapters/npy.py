@@ -83,7 +83,7 @@ class NPYAdapter(Adapter[ArrayStructure]):
 
     def read(self, slice: NDSlice = NDSlice(...)) -> NDArray[Any]:
         cache_key = (numpy.load, self._filepath)
-        arr = with_resource_cache(cache_key, numpy.load, self._filepath)
+        arr: NDArray[Any] = with_resource_cache(cache_key, numpy.load, self._filepath)
         arr = force_reshape(arr, self._structure.shape)
         arr = arr[slice] if slice else arr
         return arr
@@ -94,7 +94,7 @@ class NPYAdapter(Adapter[ArrayStructure]):
         if sum(block) != 0:
             raise IndexError(block)
         cache_key = (numpy.load, self._filepath)
-        arr = with_resource_cache(cache_key, numpy.load, self._filepath)
+        arr: NDArray[Any] = with_resource_cache(cache_key, numpy.load, self._filepath)
         arr = force_reshape(arr, self._structure.shape)
         arr = arr[slice] if slice else arr
         if slice is not None:

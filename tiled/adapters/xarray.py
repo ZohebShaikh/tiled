@@ -2,7 +2,7 @@ import itertools
 from collections.abc import Mapping
 from typing import Any, Iterator, List, Optional
 
-from xarray import DataArray, Dataset
+from xarray import Dataset
 
 from ..structures.core import Spec
 from .array import ArrayAdapter
@@ -17,7 +17,7 @@ class DatasetAdapter(MapAdapter[ArrayAdapter]):
     @classmethod
     def from_dataset(
         cls,
-        dataset: Dataset[DataArray],
+        dataset: Dataset,
         *,
         specs: Optional[List[Spec]] = None,
     ) -> "DatasetAdapter":
@@ -82,7 +82,7 @@ class DatasetAdapter(MapAdapter[ArrayAdapter]):
 
 
 class _DatasetMap(Mapping[str, ArrayAdapter]):
-    def __init__(self, dataset: Dataset[DataArray]) -> None:
+    def __init__(self, dataset: Dataset) -> None:
         """
 
         Parameters
@@ -128,6 +128,6 @@ class _DatasetMap(Mapping[str, ArrayAdapter]):
         return ArrayAdapter.from_array(
             data_array.data,
             metadata={"attrs": data_array.attrs},
-            dims=data_array.dims,
+            dims=tuple(str(dim) for dim in data_array.dims),
             specs=[spec],
         )

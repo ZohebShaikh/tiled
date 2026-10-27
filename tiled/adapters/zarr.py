@@ -1,4 +1,3 @@
-# mypy: ignore-errors
 import builtins
 import copy
 import os
@@ -6,7 +5,9 @@ from importlib.metadata import version
 from typing import Any, Iterator, List, Optional, Set, Tuple, Union, cast
 from urllib.parse import quote_plus, urljoin, urlparse
 
+import numpy
 import zarr
+import zarr.storage
 from numpy._typing import NDArray
 from packaging.version import Version
 
@@ -34,8 +35,9 @@ from .array import ArrayAdapter
 
 ZARR_LIB_V2 = Version(version("zarr")) < Version("3")
 if ZARR_LIB_V2:
-    from zarr.storage import DirectoryStore as LocalStore
-    from zarr.storage import init_array as create_array
+    # Looked up by name: type checkers see the installed zarr 3, which lacks these.
+    LocalStore = getattr(zarr.storage, "DirectoryStore")
+    create_array = getattr(zarr.storage, "init_array")
 else:
     from zarr import create_array
     from zarr.storage import LocalStore
@@ -92,6 +94,8 @@ class ZarrArrayAdapter(Adapter[ArrayStructure]):
             storage.uri + "/", "/".join(quote_plus(segment) for segment in path_parts)
         )
 
+        if not isinstance(storage, (FileStorage, ObjectStorage)):
+            raise TypeError(f"Zarr arrays cannot be stored in {storage!r}")
         if ZARR_LIB_V2:
             zarr_store = LocalStore(str(path_from_uri(data_uri)))
         else:
@@ -125,12 +129,12 @@ class ZarrArrayAdapter(Adapter[ArrayStructure]):
         return None
 
     def read(self, slice: NDSlice = NDSlice(...)) -> NDArray[Any]:
-        return cast(NDArray, self._array[self._stencil[slice]])
+        return numpy.asarray(self._array[self._stencil[slice]])
 
     def read_block(self, block: NDBlock, slice: NDSlice = NDSlice(...)) -> NDArray[Any]:
         "Slice the block out of the whole array and optionally a sub-slice therein."
         block_slice = block.slice_from_chunks(self.structure().chunks)
-        return self._array[self._stencil[block_slice][slice or ...]]
+        return numpy.asarray(self._array[self._stencil[block_slice][slice or ...]])
 
     def write(self, data: NDArray[Any], slice: NDSlice = NDSlice(...)) -> None:
         if slice:
@@ -321,6 +325,8 @@ class ZarrAdapter:
             raise TypeError(f"Unsupported URI scheme in {uri}")
 
         if is_container_type:
+            if not isinstance(zarr_obj, zarr.Group):
+                raise TypeError(f"Expected a Zarr group at {uri}")
             return ZarrGroupAdapter(
                 zarr_obj,
                 metadata=node.metadata_,
@@ -328,6 +334,8 @@ class ZarrAdapter:
                 **kwargs,
             )
         else:
+            if not isinstance(zarr_obj, zarr.Array):
+                raise TypeError(f"Expected a Zarr array at {uri}")
             return ZarrArrayAdapter(
                 zarr_obj,
                 structure=cast(ArrayStructure, data_source.structure),

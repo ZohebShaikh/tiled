@@ -23,12 +23,12 @@ from ..utils import path_from_uri
 from .utils import init_adapter_from_catalog
 
 
-def load_block(uri: str) -> Tuple[List[int], Tuple[NDArray[Any], Any]]:
+def load_block(uri: str) -> Tuple[NDArray[Any], NDArray[Any]]:
     # TODO This can be done without pandas.
     # Better to use a plain I/O library.
     df = pandas.read_parquet(path_from_uri(uri))
-    coords = df[df.columns[:-1]].values.T
-    data = df["data"].values
+    coords = df[df.columns[:-1]].to_numpy().T
+    data = df["data"].to_numpy()
     return coords, data
 
 

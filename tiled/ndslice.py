@@ -3,7 +3,16 @@ import builtins
 import itertools
 import math
 import re
-from typing import Iterable, Optional, Self, Sequence, Union
+from typing import (
+    Any,
+    Iterable,
+    Optional,
+    Self,
+    Sequence,
+    SupportsIndex,
+    Union,
+    overload,
+)
 
 from ndindex import ndindex
 
@@ -445,6 +454,14 @@ class NDSlice(tuple):
             is_ellipsis(s) or s in full_slices for s in self
         )
 
+    @overload
+    def __getitem__(self, key: SupportsIndex) -> Any: ...
+    @overload
+    def __getitem__(self, key: builtins.slice) -> tuple[Any, ...]: ...
+    @overload
+    def __getitem__(self, key: EllipsisType) -> Self: ...
+    @overload
+    def __getitem__(self, key: "NDSlice") -> "NDSlice": ...
     def __getitem__(self, key):
         "An element of this NDSlice or the composition with another NDSlice"
 
