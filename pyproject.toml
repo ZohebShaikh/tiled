@@ -291,6 +291,7 @@ test = [
 dev = [
   { include-group = "test" },
   "ruff==0.17.3",
+  "pyright==1.1.414",
 ]
 docs = [
     "ipykernel",
@@ -361,3 +362,9 @@ exclude_lines = ["if __name__ == '__main__':"]
 
 [tool.coverage.paths]
 source = ["."]
+
+[tool.pyright]
+include = ["tiled"]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.11"
