@@ -8,7 +8,7 @@ from collections.abc import Hashable
 from dataclasses import asdict
 from pathlib import Path
 from threading import Lock
-from typing import Callable, Optional, TypeVar, Union
+from typing import TYPE_CHECKING, Callable, Optional, TypeVar, Union
 from urllib.parse import parse_qs, urlparse
 from weakref import WeakValueDictionary
 
@@ -20,6 +20,10 @@ import stamina.instrumentation
 from ..structures.core import Spec
 from ..type_aliases import Chunks
 from ..utils import path_from_uri
+
+if TYPE_CHECKING:
+    from ipywidgets import Label
+    from rich.live import Live
 
 # Disable stamina's default retry logging hook.  Tiled handles its own retry
 # messages via the _LoggingAttempt wrapper (routed to tiled.client at DEBUG).
@@ -667,7 +671,7 @@ class ProgressState:
         self._progress = progress
         self._task_id = task_id
         self._spinner = spinner
-        self._live = None
+        self._live: Optional["Live"] = None
         self._retrying = False
 
     def advance(self):
@@ -710,7 +714,8 @@ class StandaloneRetryIndicator:
 
     def __init__(self):
         self._showing = False
-        self._live = None
+        self._live: Optional["Live"] = None  # terminal spinner
+        self._label: Optional["Label"] = None  # Jupyter widget
 
     @staticmethod
     def _stderr_is_tty():
@@ -730,8 +735,8 @@ class StandaloneRetryIndicator:
                 import ipywidgets as widgets
                 from IPython.display import display
 
-                self._live = widgets.Label(value="⟳ Retrying…")
-                display(self._live)
+                self._label = widgets.Label(value="⟳ Retrying…")
+                display(self._label)
             except ImportError:
                 sys.stderr.write("Retrying…\n")
                 sys.stderr.flush()
@@ -758,11 +763,8 @@ class StandaloneRetryIndicator:
             return
         self._showing = False
         if self._live is not None:
-            if is_jupyter():
-                try:
-                    self._live.stop()
-                except Exception:
-                    pass
-            else:
-                self._live.stop()
+            self._live.stop()
             self._live = None
+        if self._label is not None:
+            self._label.close()
+            self._label = None

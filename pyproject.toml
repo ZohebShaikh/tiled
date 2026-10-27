@@ -292,6 +292,9 @@ dev = [
   { include-group = "test" },
   "ruff==0.17.3",
   "pyright==1.1.414",
+  # Optional runtime dependencies, installed so pyright can check the code using them.
+  "ipywidgets",
+  "pamela",
 ]
 docs = [
     "ipykernel",

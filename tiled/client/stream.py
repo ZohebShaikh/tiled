@@ -5,7 +5,7 @@ import logging
 import sys
 import threading
 import weakref
-from typing import Any, Callable, Generic, List, Optional, TypeVar
+from typing import Any, Callable, Generic, List, Optional, TypeVar, Union
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -94,6 +94,8 @@ class _TestClientWebsocketWrapper:
         # we do not want a server dependency in the client.
         import starlette.websockets
 
+        if self._websocket is None:
+            raise RuntimeError("Websocket is not connected.")
         try:
             return self._websocket.receive_bytes()
         except starlette.websockets.WebSocketDisconnect:
@@ -135,14 +137,18 @@ class _RegularWebsocketWrapper:
 
     def recv(self, timeout=None):
         """Receive data from websocket with consistent interface."""
+        if self._websocket is None:
+            raise RuntimeError("Websocket is not connected.")
         try:
-            return self._websocket.recv(timeout=timeout)
+            # Messages are msgpack-encoded; always receive them as bytes.
+            return self._websocket.recv(timeout=timeout, decode=False)
         except websockets.exceptions.ConnectionClosedOK:
             return None
 
     def close(self):
         """Close websocket connection."""
-        self._websocket.close()
+        if self._websocket is not None:
+            self._websocket.close()
 
 
 class CallbackRegistry(Generic[T]):
@@ -158,7 +164,7 @@ class CallbackRegistry(Generic[T]):
 
     def __init__(self, executor: concurrent.futures.Executor):
         self._executor = executor
-        self._callbacks: set[T] = set()
+        self._callbacks: set[weakref.ref[Callback[T]]] = set()
 
     @property
     def executor(self):
@@ -232,6 +238,7 @@ class CallbackRegistry(Generic[T]):
         else:
             ref = weakref.ref(callback, cleanup)
         self._callbacks.add(ref)
+        return self
 
     def remove_callback(self, callback: Callback[T]) -> Self:
         """
@@ -245,7 +252,12 @@ class CallbackRegistry(Generic[T]):
         -------
         Subscription
         """
-        self._callbacks.remove(callback)
+        # Weak references compare equal when their referents are equal.
+        if inspect.ismethod(callback):
+            self._callbacks.remove(weakref.WeakMethod(callback))
+        else:
+            self._callbacks.remove(weakref.ref(callback))
+        return self
 
 
 class Subscription(abc.ABC):
@@ -269,7 +281,7 @@ class Subscription(abc.ABC):
     def __init__(
         self,
         context: Context,
-        segments: List[str] = None,
+        segments: Optional[List[str]] = None,
         executor: Optional[concurrent.futures.Executor] = None,
     ):
         segments = segments or ["/"]
@@ -426,7 +438,7 @@ class Subscription(abc.ABC):
             self.process(update)
 
     @abc.abstractmethod
-    def process(self, *args) -> None:
+    def process(self, update: Update) -> None:
         pass
 
     def start(self, start: Optional[int] = None, max_size: int = 1_000_000) -> None:
@@ -558,9 +570,9 @@ class ContainerSubscription(Subscription):
     def __init__(
         self,
         context: Context,
-        segments: List[str] = None,
+        segments: Optional[List[str]] = None,
         executor: Optional[concurrent.futures.Executor] = None,
-        structure_clients: dict = None,
+        structure_clients: Optional[dict] = None,
     ):
         super().__init__(context, segments, executor)
         self.structure_clients = structure_clients
@@ -572,9 +584,9 @@ class ContainerSubscription(Subscription):
         )
 
     def process(self, update: Update):
-        if update.type == "container-child-created":
+        if isinstance(update, LiveChildCreated):
             self.child_created.process(update)
-        elif update.type == "container-child-metadata-updated":
+        elif isinstance(update, LiveChildMetadataUpdated):
             self.child_metadata_updated.process(update)
         else:
             raise RuntimeError(f"Received update with unexpected type: {update}")
@@ -598,15 +610,17 @@ class ArraySubscription(Subscription):
     def __init__(
         self,
         context: Context,
-        segments: List[str] = None,
+        segments: Optional[List[str]] = None,
         executor: Optional[concurrent.futures.Executor] = None,
     ):
         super().__init__(context, segments, executor)
-        self.new_data: CallbackRegistry["LiveArrayData" | "LiveArrayRef"] = (
+        self.new_data: CallbackRegistry[Union["LiveArrayData", "LiveArrayRef"]] = (
             CallbackRegistry(self.executor)
         )
 
     def process(self, update: Update):
+        if not isinstance(update, (LiveArrayData, LiveArrayRef)):
+            raise RuntimeError(f"Received update with unexpected type: {update}")
         self.new_data.process(update)
 
 
@@ -628,7 +642,7 @@ class TableSubscription(Subscription):
     def __init__(
         self,
         context: Context,
-        segments: List[str] = None,
+        segments: Optional[List[str]] = None,
         executor: Optional[concurrent.futures.Executor] = None,
     ):
         super().__init__(context, segments, executor)
@@ -637,6 +651,8 @@ class TableSubscription(Subscription):
         )
 
     def process(self, update: Update):
+        if not isinstance(update, LiveTableData):
+            raise RuntimeError(f"Received update with unexpected type: {update}")
         self.new_data.process(update)
 
 
@@ -754,10 +770,13 @@ class LiveArrayRef(ArrayRef):
         "Fetch array"
         import numpy
 
+        if self.uri is None:
+            raise ValueError("This update does not reference fetchable data.")
+        uri = self.uri
         content = retry_call(
             lambda: handle_error(
                 self.subscription.context.http_client.get(
-                    self.uri,
+                    uri,
                     headers={"Accept": "application/octet-stream"},
                 )
             ).read(),
