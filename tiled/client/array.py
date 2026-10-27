@@ -6,8 +6,10 @@ from urllib.parse import parse_qs, urlparse
 
 import dask
 import dask.array
+import dask.array.core
 import httpx2 as httpx
 import numpy
+from dask.delayed import delayed
 from numpy.typing import NDArray
 
 from ..ndslice import NDBlock, NDSlice, split_slice
@@ -91,7 +93,7 @@ class _DaskArrayClient(BaseClient):
         )
 
     def __array__(self, *args, **kwargs):
-        return self.read().__array__(*args, **kwargs)
+        return numpy.asarray(self.read(), *args, **kwargs)
 
     def _get_block(self, block: NDBlock, block_slice: Optional[NDSlice] = None):
         """Fetch the data for one chunk (block) in a chunked array.
@@ -221,7 +223,7 @@ class _DaskArrayClient(BaseClient):
 
         exp_shape = block_slice.shape_after_slice(shape) if block_slice else shape
         dask_array = dask.array.from_delayed(
-            dask.delayed(self._get_block)(block, block_slice),
+            delayed(self._get_block)(block, block_slice),
             dtype=self.dtype,
             shape=exp_shape,
         )
@@ -273,7 +275,7 @@ class _DaskArrayClient(BaseClient):
         # If the expected response is small, fetch it in one go.
         if total_bytes < self.RESPONSE_BYTESIZE_LIMIT:
             dask_array = dask.array.from_delayed(
-                dask.delayed(self._get_slice)(arr_slice),
+                delayed(self._get_slice)(arr_slice),
                 dtype=self.dtype,
                 shape=exp_shape,
             )
@@ -297,7 +299,7 @@ class _DaskArrayClient(BaseClient):
             (name,) + indx: (self._get_slice, slc)
             for indx, (slc) in indexed_slices.items()
         }
-        dask_array = dask.array.Array(
+        dask_array = dask.array.core.Array(
             name=name,
             dask=dask_tasks,
             dtype=self.dtype,

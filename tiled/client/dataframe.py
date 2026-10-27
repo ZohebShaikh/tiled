@@ -1,16 +1,18 @@
 import concurrent.futures
 import functools
 import warnings
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Union
 from urllib.parse import parse_qs, urlparse
 
 import dask
 import dask.dataframe
 import httpx2 as httpx
+from dask.delayed import delayed
 
 from ..serialization.table import deserialize_arrow, serialize_arrow
+from ..structures.root import Structure
 from ..structures.table import TableStructure
-from ..utils import APACHE_ARROW_FILE_MIME_TYPE, UNCHANGED
+from ..utils import APACHE_ARROW_FILE_MIME_TYPE, UNCHANGED, Sentinel
 from .base import BaseClient
 from .utils import (
     MSGPACK_MIME_TYPE,
@@ -37,8 +39,10 @@ class _DaskDataFrameClient(BaseClient):
         assert isinstance(structure, TableStructure)
         return structure
 
-    def new_variation(self, structure=UNCHANGED, **kwargs):
-        if structure is UNCHANGED:
+    def new_variation(
+        self, *, structure: Union[Optional[Structure], Sentinel] = UNCHANGED, **kwargs
+    ):
+        if isinstance(structure, Sentinel):
             structure = self._structure
         return super().new_variation(structure=structure, **kwargs)
 
@@ -176,7 +180,7 @@ class _DaskDataFrameClient(BaseClient):
         # so `divisions` must have length len(dfs) + 1 == 2 regardless of how many
         # partitions the full dataset has.
         return dask.dataframe.from_delayed(
-            [dask.delayed(self._get_partition)(partition, columns)],
+            [delayed(self._get_partition)(partition, columns)],
             meta=meta,
             divisions=(None, None),
         )

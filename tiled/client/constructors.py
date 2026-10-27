@@ -3,7 +3,7 @@ import collections.abc
 import pathlib
 import threading
 import warnings
-from typing import Optional, Union
+from typing import Any, Dict, Mapping, Optional, Union
 from urllib.parse import parse_qs, urlparse
 
 import httpx2 as httpx
@@ -21,7 +21,7 @@ from .utils import (
 
 def from_uri(
     uri,
-    structure_clients="numpy",
+    structure_clients: Union[str, Mapping[str, Any]] = "numpy",
     *,
     cache=UNSET,
     remember_me=True,
@@ -126,7 +126,7 @@ For non-interactive authentication, use an API key or add custom auth
 
 def from_context(
     context: Context,
-    structure_clients="numpy",
+    structure_clients: Union[str, Mapping[str, Any]] = "numpy",
     node_path_parts=None,
     include_data_sources=False,
     remember_me=True,
@@ -173,7 +173,7 @@ def from_context(
                 context.authenticate(remember_me=remember_me)
     # Context ensures that context.api_uri has a trailing slash.
     item_uri = f"{context.api_uri}metadata/{'/'.join(node_path_parts)}"
-    params = parse_qs(urlparse(item_uri).query)
+    params: Dict[str, Any] = {**parse_qs(urlparse(item_uri).query)}
     if include_data_sources:
         params["include_data_sources"] = include_data_sources
     content = retry_call(
@@ -342,4 +342,4 @@ SERVERS = []  # servers spawned using simple
 # mechanism that runs at interpreter shutdown.
 # We need to intervene at that layer to close the portal, or else
 # we will wait forever for a thread run by the portal to join().
-threading._register_atexit(_cleanup_servers)
+getattr(threading, "_register_atexit")(_cleanup_servers)

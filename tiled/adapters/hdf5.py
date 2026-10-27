@@ -605,14 +605,14 @@ class HDF5Adapter(
     def __len__(self) -> int:
         return len(self._tree)
 
-    def keys(self) -> KeysView:  # type: ignore
-        return KeysView(lambda: len(self), self._keys_slice)
+    def keys(self) -> KeysView:
+        return KeysView(self, self._keys_slice)
 
-    def values(self) -> ValuesView:  # type: ignore
-        return ValuesView(lambda: len(self), self._items_slice)
+    def values(self) -> ValuesView:
+        return ValuesView(self, self._items_slice)
 
-    def items(self) -> ItemsView:  # type: ignore
-        return ItemsView(lambda: len(self), self._items_slice)
+    def items(self) -> ItemsView:
+        return ItemsView(self, self._items_slice)
 
     def search(self, query: Any) -> None:
         raise NotImplementedError

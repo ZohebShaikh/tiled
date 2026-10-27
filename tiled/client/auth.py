@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Dict, Optional
+from typing import AsyncGenerator, Dict, Optional
 
 import httpx2 as httpx
 
@@ -167,8 +167,11 @@ class TiledAuth(httpx.Auth):
     async def async_clear_token(self, key):
         raise NotImplementedError("Async support is planned but not yet implemented.")
 
-    async def async_auth_flow(self, request):
+    async def async_auth_flow(
+        self, request: httpx.Request
+    ) -> AsyncGenerator[httpx.Request, httpx.Response]:
         raise NotImplementedError("Async support is planned but not yet implemented.")
+        yield request  # Unreachable, but makes this an async generator like the base.
 
 
 def build_refresh_request(

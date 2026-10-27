@@ -160,7 +160,8 @@ class Transport(httpx.BaseTransport):
             log_response(response)
             # But, below _collect_ the response with the content in it.
 
-        if self.cache is not None:
+        cache = self.cache
+        if cache is not None:
             if (
                 response.status_code == httpx.codes.NOT_MODIFIED
                 and cached_response is not None
@@ -175,17 +176,17 @@ class Transport(httpx.BaseTransport):
             if self.controller.is_response_cacheable(
                 request=request, response=response
             ):
-                if self.cache.readonly:
+                if cache.readonly:
                     if __debug__:
                         logger.debug("Cache is read-only; will not store")
-                elif not self.cache.write_safe():
+                elif not cache.write_safe():
                     if __debug__:
                         logger.debug(
                             "Cannot write to cache from another thread; will not store"
                         )
                 else:
                     if hasattr(response, "_content"):
-                        is_stored = self.cache.set(request=request, response=response)
+                        is_stored = cache.set(request=request, response=response)
                         if __debug__:
                             if is_stored:
                                 logger.debug("Caching response for: %s", request)
@@ -196,7 +197,7 @@ class Transport(httpx.BaseTransport):
                     else:
                         # Wrap the response with cache callback:
                         def _callback(content: bytes) -> None:
-                            is_stored = self.cache.set(
+                            is_stored = cache.set(
                                 request=request, response=response, content=content
                             )
                             if __debug__:

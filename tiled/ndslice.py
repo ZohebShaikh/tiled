@@ -3,7 +3,7 @@ import builtins
 import itertools
 import math
 import re
-from typing import Iterable, Optional, Union
+from typing import Iterable, Optional, Self, Sequence, Union
 
 from ndindex import ndindex
 
@@ -115,7 +115,13 @@ def _num_steps(slc: builtins.slice) -> int:
     return len(range(start, stop, step))
 
 
-def split_1d(start, stop, step, max_len: int, pref_splits: Optional[list[int]] = None):
+def split_1d(
+    start: int,
+    stop: int,
+    step: int,
+    max_len: int,
+    pref_splits: Optional[Sequence[int]] = None,
+):
     """Split a 1D slice into sub-slices that do not exceed max_len steps.
 
     Splits are chosen close to the ideal equal partition. If preferred
@@ -168,7 +174,9 @@ def split_1d(start, stop, step, max_len: int, pref_splits: Optional[list[int]] =
 
 
 def split_slice(
-    arr_slice: "NDSlice", max_size: int, pref_splits: Optional[list[list[int]]] = None
+    arr_slice: "NDSlice",
+    max_size: int,
+    pref_splits: Optional[Sequence[Sequence[int]]] = None,
 ) -> dict[tuple[int, ...], "NDSlice"]:
     """Split an N-dimensional slice into smaller slices that do not exceed max_size
 
@@ -361,6 +369,8 @@ def compose_slices(slc1: "NDSlice", slc2: "NDSlice") -> "NDSlice":
                 res_rgt.append(s1)
                 i1l -= 1
                 s1 = slc1[i1l]
+            if not isinstance(s1, builtins.slice):
+                raise ValueError(f"Cannot compose {slc1} with {slc2}.")
 
             # Now compose s1 and s2 and add to the result from the right
             if isinstance(s2, int):
@@ -407,7 +417,7 @@ class NDSlice(tuple):
 
     def __new__(
         cls, *args: Union[int, builtins.slice, EllipsisType, Iterable, None]
-    ) -> "NDSlice":
+    ) -> Self:
         if len(args) == 1 and (isinstance(args[0], (tuple, list)) or args[0] is None):
             return cls(*(args[0] or ()))
         if any(not isinstance(s, (int, builtins.slice, EllipsisType)) for s in args):
@@ -476,7 +486,7 @@ class NDSlice(tuple):
             )
         ndim = ndim or len(self)
 
-        def convert_dimension(slc: Union[int, builtins.slice]) -> JSON:
+        def convert_dimension(slc: Union[int, builtins.slice]) -> Union[int, JSON]:
             if isinstance(slc, builtins.slice):
                 return (
                     ({} if slc.start is None else {"start": slc.start})
@@ -590,7 +600,7 @@ class NDSlice(tuple):
         "Check if this NDSlice is valid for an array of the given shape"
         return (not self) or ndindex(self).isvalid(shape)
 
-    def expand_for_shape(self, shape: tuple[int, ...]) -> "NDSlice":
+    def expand_for_shape(self, shape: Sequence[int]) -> Self:
         "Expand this NDSlice (remove ':' or '...') for an array of the given shape"
         return self.__class__(*ndindex(self).expand(shape).raw)
 
@@ -629,7 +639,7 @@ class NDSlice(tuple):
             *(builtins.slice(s, s + 1, 1) if isinstance(s, int) else s for s in self)
         )
 
-    def is_scalar(self, shape: tuple[int, ...]) -> bool:
+    def is_scalar(self, shape: Sequence[Optional[int]]) -> bool:
         "Check if this NDSlice selects a single element (scalar) from an array of the given shape"
         return (len(self) == len(shape)) and all(
             _is_scalar_slice(s, length=n) for s, n in zip(self, shape)
@@ -643,7 +653,7 @@ class NDBlock(NDSlice):
     i.e. the `step` parameter along each dimension, if specified, must be 1.
     """
 
-    def __new__(cls, *args: Union[int, builtins.slice, EllipsisType]) -> "NDBlock":
+    def __new__(cls, *args: Union[int, builtins.slice, EllipsisType]) -> Self:
         inst = super().__new__(cls, *args)
 
         for s in inst:

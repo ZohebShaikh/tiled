@@ -6,7 +6,7 @@ import signal
 from concurrent.futures import ThreadPoolExecutor, wait
 from pathlib import Path
 from threading import Event, Lock
-from typing import Iterable, MutableMapping, Optional, Union
+from typing import MutableMapping, Optional, Sequence, Union
 
 import httpx2 as httpx
 from httpx2._decoders import SUPPORTED_DECODERS
@@ -40,6 +40,17 @@ STREAMING_ACCEPT_ENCODING = ", ".join(
 ATTACHMENT_FILENAME_PLACEHOLDER = "CONTENT_DISPOSITION_HEADER_ATTACHMENT_FILENAME"
 
 
+def _attachment_filename(response: httpx.Response) -> str:
+    "Extract the filename from the response's Content-Disposition header."
+    content_disposition = response.headers["Content-Disposition"]
+    match = CONTENT_DISPOSITION_PATTERN.match(content_disposition)
+    if match is None:
+        raise ValueError(
+            f"Could not parse filename from Content-Disposition {content_disposition!r}"
+        )
+    return match.group(1)
+
+
 def _resolve_placeholder(target, response: httpx.Response):
     """Substitute `ATTACHMENT_FILENAME_PLACEHOLDER` using the server-provided
     `Content-Disposition` filename. Works for both `Path` (filename position)
@@ -48,16 +59,12 @@ def _resolve_placeholder(target, response: httpx.Response):
     if isinstance(target, Path):
         if target.name != ATTACHMENT_FILENAME_PLACEHOLDER:
             return target
-        filename = CONTENT_DISPOSITION_PATTERN.match(
-            response.headers["Content-Disposition"]
-        ).group(1)
-        return Path(target.parent, filename)
+        return Path(target.parent, _attachment_filename(response))
     if ATTACHMENT_FILENAME_PLACEHOLDER not in target:
         return target
-    filename = CONTENT_DISPOSITION_PATTERN.match(
-        response.headers["Content-Disposition"]
-    ).group(1)
-    return target.replace(ATTACHMENT_FILENAME_PLACEHOLDER, filename)
+    return target.replace(
+        ATTACHMENT_FILENAME_PLACEHOLDER, _attachment_filename(response)
+    )
 
 
 def _download_url(
@@ -68,7 +75,7 @@ def _download_url(
     url: str,
     target: Union[Path, str],
     mapping: Optional[MutableMapping],
-    lock: Optional[Lock],
+    lock: Lock,
     accept_encoding: Optional[str],
 ):
     """Fetch `url` and write the body to disk (when `mapping is None`) or to
@@ -82,7 +89,7 @@ def _download_url(
     headers = {"Accept-Encoding": accept_encoding} if accept_encoding else None
     try:
         if mapping is None:
-            target.parent.mkdir(exist_ok=True, parents=True)
+            Path(target).parent.mkdir(exist_ok=True, parents=True)
         for attempt in retry_context():
             with attempt:
                 with client.stream("GET", url, headers=headers) as response:
@@ -122,12 +129,12 @@ def _download_url(
 
 def download(
     client,
-    urls: Iterable[str],
-    targets: Iterable,
+    urls: Sequence[str],
+    targets: Sequence,
     *,
     mapping: Optional[MutableMapping] = None,
     max_workers: int = 4,
-    totals: Optional[Iterable[Optional[int]]] = None,
+    totals: Optional[Sequence[Optional[int]]] = None,
     accept_encoding: Optional[str] = None,
 ):
     """Download multiple URLs in parallel.
@@ -178,12 +185,13 @@ def download(
 
     def sigint_handler(signum, frame):
         done_event.set()
-        original_sigint_handler(signal.SIGINT, frame)
+        if callable(original_sigint_handler):
+            original_sigint_handler(signal.SIGINT, frame)
 
     done_event = Event()
     original_sigint_handler = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, sigint_handler)
-    lock = Lock() if mapping is not None else None
+    lock = Lock()
     futures = []
     try:
         with progress:

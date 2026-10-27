@@ -1,13 +1,13 @@
 from typing import Iterator
 
 # There is no public API in httpx2 to injecting additional decoders.
-from httpx2._decoders import SUPPORTED_DECODERS
+from httpx2._decoders import SUPPORTED_DECODERS, ContentDecoder
 
 from ..utils import modules_available
 
 if modules_available("blosc2"):
 
-    class Blosc2Decoder:
+    class Blosc2Decoder(ContentDecoder):
         def __init__(self):
             # Blosc seems to have no streaming interface.
             # Accumulate response data in a cache here,
@@ -16,7 +16,7 @@ if modules_available("blosc2"):
 
         def decode(self, data: bytes) -> Iterator[bytes]:
             self._data.append(data)
-            return ()
+            return iter(())
 
         def flush(self) -> Iterator[bytes]:
             # Hide this here to defer the numpy import that it triggers.
@@ -35,7 +35,9 @@ if modules_available("blosc2"):
                 if cbytes <= 0:
                     break
                 frame = view[offset : offset + cbytes]
-                yield blosc2.decompress(frame)
+                decompressed = blosc2.decompress(frame)
+                assert isinstance(decompressed, bytes)
+                yield decompressed
                 offset += cbytes
 
     SUPPORTED_DECODERS["blosc2"] = Blosc2Decoder
@@ -44,15 +46,15 @@ if modules_available("blosc2"):
 if modules_available("zstandard"):
     import zstandard
 
-    class ZStandardDecoder:
+    class ZStandardDecoder(ContentDecoder):
         def __init__(self):
             self._context = zstandard.ZstdDecompressor()
             self._obj = self._context.decompressobj()
 
         def decode(self, data: bytes) -> Iterator[bytes]:
-            return (self._obj.decompress(data),)
+            return iter((self._obj.decompress(data),))
 
         def flush(self) -> Iterator[bytes]:
-            return ()
+            return iter(())
 
     SUPPORTED_DECODERS["zstd"] = ZStandardDecoder

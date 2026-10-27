@@ -23,10 +23,12 @@ from typing import (
     Callable,
     Generic,
     Iterator,
+    NamedTuple,
     Optional,
     Tuple,
     TypeVar,
     Union,
+    overload,
 )
 from urllib.parse import urlparse, urlunparse
 
@@ -106,7 +108,13 @@ class ListView(collections.abc.Sequence[V], Generic[V]):
             list_ = list(self._internal_list)
         p.text(pformat(list_))
 
-    def __getitem__(self, index: int) -> V:
+    @overload
+    def __getitem__(self, index: int) -> V: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[V]: ...
+
+    def __getitem__(self, index: Union[int, slice]) -> Union[V, list[V]]:
         return self._internal_list[index]
 
     def __iter__(self) -> collections.abc.Iterator[V]:
@@ -122,7 +130,7 @@ class ListView(collections.abc.Sequence[V], Generic[V]):
         raise TypeError("Deleting values is not allowed.")
 
     def __add__(self, other: collections.abc.Sequence[K]) -> "ListView[V | K]":
-        return type(self)(self._internal_list + other)
+        return ListView([*self._internal_list, *other])
 
     def __eq__(self, other: Any) -> bool:
         return self._internal_list == other
@@ -175,28 +183,33 @@ class DictView(collections.abc.Mapping[K, V], Generic[K, V]):
 # It is defined at module scope because namedtupled need to be defined at
 # module scope in order to be pickleable. It should only be used internally by
 # OneShotCachedMap below.
-_OneShotCachedMapWrapper = collections.namedtuple("_OneShotCachedMapWrapper", ("func",))
+class _OneShotCachedMapWrapper(NamedTuple):
+    func: Callable[[], Any]
 
 
 class OneShotCachedMap(collections.abc.Mapping[K, V], Generic[K, V]):
     __slots__ = ("__mapping", "__lock")
 
-    def __init__(self, *args, **kwargs: Callable[[], V]):
-        dictionary: dict[K, Union[Callable[[], V], V]] = dict(*args, **kwargs)
+    def __init__(self, *args: Any, **kwargs: Callable[[], V]):
+        dictionary: dict[Any, Callable[[], V]] = dict(*args, **kwargs)
         wrap = _OneShotCachedMapWrapper
         # TODO should be recursive lock?
         self.__lock = threading.Lock()
         # TODO type validation?
-        self.__mapping = {k: wrap(v) for k, v in dictionary.items()}
+        self.__mapping: dict[K, Union[_OneShotCachedMapWrapper, V]] = {
+            k: wrap(v) for k, v in dictionary.items()
+        }
 
     def __getitem__(self, key: K) -> V:
         # TODO per-key locking?
         with self.__lock:
             v = self.__mapping[key]
-            if isinstance(v, _OneShotCachedMapWrapper):
-                # TODO handle exceptions?
-                v = self.__mapping[key] = v.func()
-        return v
+            if not isinstance(v, _OneShotCachedMapWrapper):
+                return v
+            # TODO handle exceptions?
+            value: V = v.func()
+            self.__mapping[key] = value
+        return value
 
     def set(self, key: K, value_factory: Callable[[], V]):
         """
@@ -208,19 +221,23 @@ class OneShotCachedMap(collections.abc.Mapping[K, V], Generic[K, V]):
             )
         self.__mapping[key] = _OneShotCachedMapWrapper(value_factory)
 
+    def __or__(self, other: collections.abc.Mapping[K, V]) -> "OneShotCachedMap[K, V]":
+        "Overlay the values in other, keeping the not-yet-evaluated entries lazy."
+        merged: OneShotCachedMap[K, V] = OneShotCachedMap()
+        merged.__setstate__({**self.__mapping, **other})
+        return merged
+
     def discard(self, key: K):
         """
         Discard a key if it is present. This is idempotent.
         """
         self.__mapping.pop(key, None)
-        self.evict(key)
 
     def remove(self, key: K):
         """
         Remove a key. Raises KeyError if key not present.
         """
         del self.__mapping[key]
-        self.evict(key)
 
     def __len__(self) -> int:
         return len(self.__mapping)
@@ -228,16 +245,14 @@ class OneShotCachedMap(collections.abc.Mapping[K, V], Generic[K, V]):
     def __iter__(self) -> collections.abc.Iterator[K]:
         return iter(self.__mapping)
 
-    def __contains__(self, k: K) -> bool:
+    def __contains__(self, k: object) -> bool:
         # make sure checking 'in' does not trigger evaluation
         return k in self.__mapping
 
-    def __getstate__(self) -> collections.abc.Mapping[K, Union[Callable[[], V], V]]:
+    def __getstate__(self) -> dict[K, Union[_OneShotCachedMapWrapper, V]]:
         return self.__mapping
 
-    def __setstate__(
-        self, mapping: collections.abc.Mapping[K, Union[Callable[[], V], V]]
-    ):
+    def __setstate__(self, mapping: dict[K, Union[_OneShotCachedMapWrapper, V]]):
         self.__mapping = mapping
         self.__lock = threading.Lock()
 
@@ -269,7 +284,9 @@ class CachingMap(collections.abc.Mapping[K, V], Generic[K, V]):
     __slots__ = ("__mapping", "__cache")
 
     def __init__(
-        self, mapping: collections.abc.Mapping[K, Callable[[], V]], cache: dict[K, V]
+        self,
+        mapping: collections.abc.MutableMapping[K, Callable[[], V]],
+        cache: dict[K, V],
     ):
         self.__mapping = mapping
         self.__cache = cache
@@ -323,17 +340,18 @@ class CachingMap(collections.abc.Mapping[K, V], Generic[K, V]):
     def __iter__(self) -> collections.abc.Iterator[K]:
         return iter(self.__mapping)
 
-    def __contains__(self, key: K) -> bool:
+    def __contains__(self, key: object) -> bool:
         # Ensure checking 'in' does not trigger evaluation.
         return key in self.__mapping
 
     def __getstate__(
         self,
-    ) -> Tuple[collections.abc.Mapping[K, Callable[[], V]], dict[K, V]]:
+    ) -> Tuple[collections.abc.MutableMapping[K, Callable[[], V]], dict[K, V]]:
         return self.__mapping, self.__cache
 
     def __setstate__(
-        self, state: Tuple[collections.abc.Mapping[K, Callable[[], V]], dict[K, V]]
+        self,
+        state: Tuple[collections.abc.MutableMapping[K, Callable[[], V]], dict[K, V]],
     ):
         mapping, cache = state
         self.__mapping = mapping
@@ -405,7 +423,9 @@ def gen_tree(tree, nodes=None, last=None):
     def dummy_client(*args, **kwargs):
         return None
 
-    structure_clients = collections.defaultdict(lambda: dummy_client)
+    structure_clients: collections.defaultdict[str, Callable[..., Any]] = (
+        collections.defaultdict(lambda: dummy_client)
+    )
     structure_clients["container"] = Container
     fast_tree = tree.new_variation(structure_clients=structure_clients)
     if nodes is None:
@@ -413,6 +433,7 @@ def gen_tree(tree, nodes=None, last=None):
         for index, node in enumerate(fast_tree):
             yield from gen_tree(fast_tree, [node], [index == last_index])
     else:
+        assert last is not None  # Passed alongside nodes in the recursion.
         value = fast_tree[nodes[-1]]
         if hasattr(value, "items"):
             yield _line(nodes, last)
@@ -607,7 +628,7 @@ def safe_json_dump(content, *, auto_json_types=None):
         if isinstance(content, Path):
             return str(content)
         if isinstance(auto_json_types, collections.abc.Sequence) and isinstance(
-            content, auto_json_types
+            content, tuple(auto_json_types)
         ):
             return content.to_json()
         # No need to import numpy if it hasn't been used already.
@@ -782,9 +803,17 @@ def is_coroutine_callable(call: Callable[..., Any]) -> bool:
     return inspect.iscoroutinefunction(dunder_call)
 
 
+@overload
 async def ensure_awaitable(
-    func: Callable[..., Union[T, Awaitable[T]]], *args: Any, **kwargs: Any
-) -> T:
+    func: Callable[..., Awaitable[T]], *args: Any, **kwargs: Any
+) -> T: ...
+
+
+@overload
+async def ensure_awaitable(func: Callable[..., T], *args: Any, **kwargs: Any) -> T: ...
+
+
+async def ensure_awaitable(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     if is_coroutine_callable(func):
         return await func(*args, **kwargs)
     else:
@@ -894,42 +923,6 @@ def ensure_specified_sql_driver(uri: str) -> str:
     scheme, rest = uri.split(":", 1)
     new_scheme = SCHEME_TO_SCHEME_PLUS_DRIVER.get(scheme, scheme)
     return ":".join([new_scheme, rest])
-
-
-class catch_warning_msg(warnings.catch_warnings):
-    """Backward compatible version of catch_warnings for python <3.11.
-
-    Allows regex matching of warning message, as in filterwarnings().
-    Note that this context manager is not thread-safe.
-    https://docs.python.org/3.12/library/warnings.html#warnings.catch_warnings
-    """
-
-    def __init__(
-        self,
-        *,
-        action="",
-        message="",
-        category=Warning,
-        module="",
-        lineno=0,
-        append=False,
-        record=False,
-    ):
-        super().__init__(record=record)
-        self.apply_filter = functools.partial(
-            warnings.filterwarnings,
-            action,
-            message=message,
-            category=category,
-            module=module,
-            lineno=lineno,
-            append=append,
-        )
-
-    def __enter__(self):
-        super().__enter__()
-        self.apply_filter()
-        return self
 
 
 def parse_mimetype(mimetype: str) -> tuple[str, dict]:

@@ -27,7 +27,9 @@ class BytesClient(BaseClient):
     `MutableMapping` of `BytesIO` buffers.
     """
 
-    structure_family: StructureFamily = StructureFamily.bytes
+    @property
+    def structure_family(self) -> StructureFamily:
+        return StructureFamily.bytes
 
     def __repr__(self) -> str:
         """Render as `<BytesClient total across N assets>` when known.

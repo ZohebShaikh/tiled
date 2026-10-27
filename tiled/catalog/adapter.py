@@ -322,8 +322,8 @@ class Context:
             if isinstance(value, str):
                 adapters_by_mimetype[key] = import_object(value)
         # User-provided adapters take precedence over defaults.
-        merged_adapters_by_mimetype = collections.ChainMap(
-            adapters_by_mimetype, DEFAULT_ADAPTERS_BY_MIMETYPE
+        merged_adapters_by_mimetype = (
+            DEFAULT_ADAPTERS_BY_MIMETYPE | adapters_by_mimetype
         )
         self.adapters_by_mimetype = merged_adapters_by_mimetype
         self.cache_config = cache_config

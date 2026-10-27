@@ -1,10 +1,10 @@
 import collections.abc
 import time
-from collections.abc import MutableMapping
+from collections.abc import Mapping, MutableMapping
 from copy import copy, deepcopy
 from dataclasses import asdict
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from urllib.parse import parse_qs, urlparse
 
 import json_merge_patch
@@ -17,7 +17,14 @@ from tiled.client.context import Context
 from ..structures.core import STRUCTURE_TYPES, Spec, StructureFamily
 from ..structures.data_source import DataSource
 from ..structures.root import Structure
-from ..utils import UNCHANGED, DictView, ListView, patch_mimetypes, safe_json_dump
+from ..utils import (
+    UNCHANGED,
+    DictView,
+    ListView,
+    Sentinel,
+    patch_mimetypes,
+    safe_json_dump,
+)
 from .metadata_update import apply_update_patch
 from .utils import (
     MSGPACK_MIME_TYPE,
@@ -108,13 +115,10 @@ class MetadataRevisions:
                         )
                     ).json(),
                 )
-                if len(result) == 0:
-                    result = content.copy()
-                else:
-                    result["data"].extend(content["data"])
+                result.extend(content["data"])
                 next_page_url = content["links"]["next"]
 
-            return result["data"]
+            return result
 
     def delete_revision(self, n):
         for attempt in retry_context():
@@ -146,7 +150,7 @@ class BaseClient:
         self._context = context
         self._item = item
         self._cached_len = None  # a cache just for __len__
-        self.structure_clients = structure_clients
+        self.structure_clients: Mapping[str, Any] = structure_clients
         self._metadata_revisions = None
         self._include_data_sources = include_data_sources
         attributes = self.item["attributes"]
@@ -221,7 +225,7 @@ class BaseClient:
         return self._context
 
     def refresh(self):
-        params = {
+        params: Dict[str, Any] = {
             **parse_qs(urlparse(self.uri).query),
         }
         if self._include_data_sources:
@@ -334,19 +338,20 @@ class BaseClient:
 
     def new_variation(
         self,
-        structure_clients=UNCHANGED,
-        include_data_sources=UNCHANGED,
-        structure=UNCHANGED,
+        *,
+        structure_clients: Union[Mapping[str, Any], Sentinel] = UNCHANGED,
+        include_data_sources: Union[bool, Sentinel] = UNCHANGED,
+        structure: Union[Optional[Structure], Sentinel] = UNCHANGED,
         **kwargs,
     ):
         """
         This is intended primarily for internal use and use by subclasses.
         """
-        if structure_clients is UNCHANGED:
+        if isinstance(structure_clients, Sentinel):
             structure_clients = self.structure_clients
-        if include_data_sources is UNCHANGED:
+        if isinstance(include_data_sources, Sentinel):
             include_data_sources = self._include_data_sources
-        if structure is UNCHANGED:
+        if isinstance(structure, Sentinel):
             structure = self._structure
         return type(self)(
             self.context,
@@ -446,9 +451,11 @@ class BaseClient:
                 f"raw_export() got unexpected keyword arguments: {sorted(kwargs)!r}"
             )
 
-        in_memory = isinstance(destination, MutableMapping)
-        if not in_memory:
-            destination = Path(destination or Path.cwd())
+        if isinstance(destination, MutableMapping):
+            mapping, directory = destination, None
+        else:
+            mapping, directory = None, Path(destination or Path.cwd())
+        in_memory = mapping is not None
 
         # Import here to defer the import of rich (for progress bar).
         from .download import (
@@ -460,7 +467,7 @@ class BaseClient:
         urls = []
         targets = []  # Paths or posix-style string keys.
         sizes = []  # Known content lengths (parallel to urls); None if unknown.
-        data_sources = self.include_data_sources().data_sources()
+        data_sources = self.include_data_sources().data_sources() or []
         asset_manifest = self.asset_manifest(data_sources)
         if len(data_sources) != 1:
             raise NotImplementedError(
@@ -473,11 +480,13 @@ class BaseClient:
             for asset in data_source.assets:
                 if len(data_source.assets) == 1:
                     # Only one asset: keep the name simple.
-                    base = "" if in_memory else destination
+                    base = "" if directory is None else directory
                 else:
                     # Multiple assets: namespace each asset by id.
                     base = (
-                        f"{asset.id}" if in_memory else Path(destination, str(asset.id))
+                        f"{asset.id}"
+                        if directory is None
+                        else Path(directory, str(asset.id))
                     )
                 if asset.is_directory:
                     relative_paths = asset_manifest[asset.id]
@@ -527,7 +536,7 @@ class BaseClient:
                 self.context.http_client,
                 urls,
                 targets,
-                mapping=destination,
+                mapping=mapping,
                 max_workers=max_workers,
                 totals=sizes,
                 accept_encoding=accept_encoding,
@@ -806,10 +815,7 @@ class BaseClient:
             )
 
         assert content_type in patch_mimetypes
-        if specs_patch is None:
-            normalized_specs_patch = None
-        else:
-            normalized_specs_patch = []
+        normalized_specs_patch = []
 
         if content_type == patch_mimetypes.JSON_PATCH:
             if specs_patch:
@@ -828,7 +834,7 @@ class BaseClient:
         data = {
             "content-type": content_type,
             "metadata": metadata_patch,
-            "specs": normalized_specs_patch,
+            "specs": None if specs_patch is None else normalized_specs_patch,
             "access_tags": access_tags_patch,
         }
         params = {}

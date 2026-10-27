@@ -5,7 +5,7 @@ import logging
 import sys
 import threading
 import weakref
-from typing import Any, Callable, Generic, List, Optional, TypeVar, Union
+from typing import Any, Callable, Generic, List, Mapping, Optional, TypeVar, Union
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -572,7 +572,7 @@ class ContainerSubscription(Subscription):
         context: Context,
         segments: Optional[List[str]] = None,
         executor: Optional[concurrent.futures.Executor] = None,
-        structure_clients: Optional[dict] = None,
+        structure_clients: Optional[Mapping[str, Any]] = None,
     ):
         super().__init__(context, segments, executor)
         self.structure_clients = structure_clients

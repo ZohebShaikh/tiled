@@ -184,32 +184,32 @@ class MapAdapter(Generic[A], ContainerAdapter[A], IndexersMixin):
         """
         return len(self._mapping)
 
-    def keys(self) -> KeysView:  # type: ignore
+    def keys(self) -> KeysView:
         """
 
         Returns
         -------
 
         """
-        return KeysView(lambda: len(self), self._keys_slice)
+        return KeysView(self, self._keys_slice)
 
-    def values(self) -> ValuesView:  # type: ignore
+    def values(self) -> ValuesView:
         """
 
         Returns
         -------
 
         """
-        return ValuesView(lambda: len(self), self._items_slice)
+        return ValuesView(self, self._items_slice)
 
-    def items(self) -> ItemsView:  # type: ignore
+    def items(self) -> ItemsView:
         """
 
         Returns
         -------
 
         """
-        return ItemsView(lambda: len(self), self._items_slice)
+        return ItemsView(self, self._items_slice)
 
     @property
     def metadata_stale_at(self) -> Optional[datetime]:

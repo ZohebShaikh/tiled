@@ -1,5 +1,6 @@
 import itertools
 import warnings
+from typing import Any, Iterable, Mapping, Tuple, Union
 
 import httpx2 as httpx
 
@@ -10,7 +11,7 @@ from .utils import ClientError
 
 
 def copy(
-    source: BaseClient,
+    source: Union[BaseClient, Mapping[str, Any], Iterable[Tuple[str, Any]]],
     dest: BaseClient,
     on_conflict: str = "error",
 ):
@@ -44,8 +45,7 @@ def copy(
 
     >>> copy(a, b, on_conflict = 'skip')
     """
-    if hasattr(source, "structure_family"):
-        # looks like a client object
+    if isinstance(source, BaseClient):
         _DISPATCH[source.structure_family](
             source.include_data_sources(), dest, on_conflict
         )

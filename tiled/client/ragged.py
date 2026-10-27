@@ -86,6 +86,7 @@ class RaggedClient(BaseClient):
             streamed to subscribed listeners, but the server may choose not to save the changes.
         """
 
+        array = make_ragged_array(array)
         block_tuple = (block,) if isinstance(block, int) else tuple(block)
         url_path = self.item["links"]["block"]
         params: dict[str, Any] = {

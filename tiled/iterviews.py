@@ -2,12 +2,13 @@
 Iterables for KeysView, ValuesView, ItemsView that are sliceable.
 """
 
+import collections.abc
+from typing import ClassVar
+
 
 class IterViewBase:
-    __slots__ = ("_get_length", "_page_size")
-
-    def __init__(self, get_length) -> None:
-        self._get_length = get_length
+    __slots__ = ()
+    _name: ClassVar[str]
 
     def __repr__(self):
         return f"<{type(self).__name__}>"
@@ -26,22 +27,22 @@ class IterViewBase:
     def tail(self, n=5):
         return list(reversed(self[-1 : -(n + 1) : -1]))
 
+    def __getitem__(self, index_or_slice):
+        raise NotImplementedError
+
     def __init_subclass__(cls, *args, **kwargs):
         cls.first.__doc__ = f"Get the first {cls._name}."
         cls.last.__doc__ = f"Get the last {cls._name}."
         cls.head.__doc__ = f"Get the first N {cls._name}s."
         cls.tail.__doc__ = f"Get the last N {cls._name}s."
 
-    def __len__(self):
-        return self._get_length()
 
-
-class KeysView(IterViewBase):
+class KeysView(IterViewBase, collections.abc.KeysView):
     """
     A sliceable, iterable view of keys.
     """
 
-    __slots__ = ("_keys_slice",)
+    __slots__ = ("_keys_slice", "_page_size")
     _name = "key"
 
     def __init__(self, get_length, keys_slice, page_size=None) -> None:
@@ -53,7 +54,7 @@ class KeysView(IterViewBase):
         "Set page size, to tune performance."
         # Return a new instance of this object with all the same state
         # except page_size set to n.
-        return type(self)(self._get_length, self._keys_slice, page_size=n)
+        return type(self)(self._mapping, self._keys_slice, page_size=n)
 
     def __getitem__(self, index_or_slice):
         if isinstance(index_or_slice, int):
@@ -88,12 +89,12 @@ class KeysView(IterViewBase):
         yield from self._keys_slice(0, None, 1, self._page_size)
 
 
-class ItemsView(IterViewBase):
+class ItemsView(IterViewBase, collections.abc.ItemsView):
     """
     A sliceable, iterable view of (key, value) pairs.
     """
 
-    __slots__ = ("_items_slice",)
+    __slots__ = ("_items_slice", "_page_size")
     _name = "item"
 
     def __init__(self, get_length, items_slice, page_size=None) -> None:
@@ -105,7 +106,7 @@ class ItemsView(IterViewBase):
         "Set page size, to tune performance."
         # Return a new instance of this object with all the same state
         # except page_size set to n.
-        return type(self)(self._get_length, self._items_slice, page_size=n)
+        return type(self)(self._mapping, self._items_slice, page_size=n)
 
     def __getitem__(self, index_or_slice):
         if isinstance(index_or_slice, int):
@@ -140,12 +141,12 @@ class ItemsView(IterViewBase):
         yield from self._items_slice(0, None, 1, self._page_size)
 
 
-class ValuesView(IterViewBase):
+class ValuesView(IterViewBase, collections.abc.ValuesView):
     """
     A sliceable, iterable view of values.
     """
 
-    __slots__ = ("_items_slice",)
+    __slots__ = ("_items_slice", "_page_size")
     _name = "value"
 
     def __init__(self, get_length, items_slice, page_size=None) -> None:
@@ -157,7 +158,7 @@ class ValuesView(IterViewBase):
         "Set page size, to tune performance."
         # Return a new instance of this object with all the same state
         # except page_size set to n.
-        return type(self)(self._get_length, self._items_slice, page_size=n)
+        return type(self)(self._mapping, self._items_slice, page_size=n)
 
     def __getitem__(self, index_or_slice):
         if isinstance(index_or_slice, int):
@@ -195,6 +196,10 @@ class ValuesView(IterViewBase):
     def __iter__(self):
         for key, value in self._items_slice(0, None, 1, self._page_size):
             yield value
+
+    def __contains__(self, value):
+        # Iterate in pages rather than looking up each key individually.
+        return any(v is value or v == value for v in self)
 
 
 def slice_to_interval(slice_):

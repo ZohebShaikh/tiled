@@ -1,7 +1,7 @@
 import itertools as it
 import time
 import warnings
-from typing import TYPE_CHECKING, Iterable, Optional, Union
+from typing import TYPE_CHECKING, Iterable, Optional, Self, Union
 from urllib.parse import parse_qs, urlparse
 
 from ..structures.core import StructureFamily
@@ -67,14 +67,18 @@ class CompositeClient(Container):
             include_data_sources=self._include_data_sources,
         )
 
-    def _keys_slice(self, start, stop, direction, _ignore_inlined_contents=False):
+    def _keys_slice(
+        self, start, stop, direction, page_size=None, *, _ignore_inlined_contents=False
+    ):
         yield from it.islice(self._flat_keys_mapping.keys(), start, stop)
 
-    def _items_slice(self, start, stop, direction, _ignore_inlined_contents=False):
+    def _items_slice(
+        self, start, stop, direction, page_size=None, *, _ignore_inlined_contents=False
+    ):
         for key in it.islice(self._flat_keys_mapping.keys(), start, stop):
             yield key, self[key]
 
-    def __iter__(self):
+    def __iter__(self, _ignore_inlined_contents=False):
         yield from self._keys_slice(0, None, 1)
 
     def __len__(self):
@@ -102,15 +106,18 @@ class CompositeClient(Container):
     def __contains__(self, key):
         return key in self._flat_keys_mapping.keys()
 
-    def create_container(self, key=None, *, metadata=None, specs=None):
+    def create_container(
+        self, key=None, *, metadata=None, specs=None, access_tags=None
+    ):
         """Composite nodes can not include nested containers by design."""
         raise NotImplementedError("Cannot create a container within a composite node.")
 
     def delete_contents(
         self,
         keys: Optional[Union[str, Iterable[str]]] = None,
+        recursive: bool = False,
         external_only: bool = True,
-    ) -> "CompositeClient":
+    ) -> Self:
         """Delete the contents of this Composite node.
 
         Only arrays or entire tables, not individual columns, can be deleted.
@@ -137,7 +144,9 @@ class CompositeClient(Container):
                 "accessor to the Container client to delete the entire table."
             )
 
-        return super().delete_contents(keys, external_only=external_only)
+        return super().delete_contents(
+            keys, recursive=recursive, external_only=external_only
+        )
 
     def read(self, variables=None, dim0=None):
         """Download the contents of a composite node as an xarray.Dataset.

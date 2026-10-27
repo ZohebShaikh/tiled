@@ -16,7 +16,7 @@ class AwkwardClient(BaseClient):
         # TODO Include some summary of the structure. Probably
         # lift __repr__ code from awkward itself here.
         form = awkward.forms.from_dict(self.structure().form)
-        if isinstance(form, awkward.forms.recordform.RecordForm):
+        if isinstance(form, awkward.forms.RecordForm):
             out = f"<{type(self).__name__} {{"
             # Always show at least one field
             if form.fields:

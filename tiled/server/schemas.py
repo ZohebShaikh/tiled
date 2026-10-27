@@ -204,7 +204,7 @@ class DataSource(pydantic.BaseModel, Generic[StructureT]):
             assets = [Asset.from_assoc_orm(assoc) for assoc in orm.asset_associations]
         else:
             assets = []
-        return cls(
+        return DataSource(
             id=orm.id,
             structure_family=orm.structure_family,
             structure=structure,
