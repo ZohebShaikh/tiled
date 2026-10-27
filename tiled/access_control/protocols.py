@@ -49,7 +49,7 @@ class AccessPolicy(ABC):
     async def allowed_scopes(
         self,
         node: BaseAdapter,
-        principal: Principal,
+        principal: Optional[Principal],
         authn_access_tags: Optional[AccessTags],
         authn_scopes: Scopes,
     ) -> Scopes:
@@ -59,7 +59,7 @@ class AccessPolicy(ABC):
     async def filters(
         self,
         node: BaseAdapter,
-        principal: Principal,
+        principal: Optional[Principal],
         authn_access_tags: Optional[AccessTags],
         authn_scopes: Scopes,
         scopes: Scopes,

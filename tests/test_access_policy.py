@@ -20,7 +20,7 @@ def external_policy() -> ExternalPolicyDecisionPoint:
     class TestExternalPolicyDecisionPoint(ExternalPolicyDecisionPoint):
         def build_input(
             self,
-            principal: Principal,
+            principal: Optional[Principal],
             authn_access_tags: Optional[AccessTags],
             authn_scopes: Scopes,
             access_tags: Optional[AccessTags] = None,

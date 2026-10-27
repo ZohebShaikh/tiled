@@ -44,7 +44,7 @@ class DummyAccessPolicy(AccessPolicy):
     async def allowed_scopes(
         self,
         node: BaseAdapter,
-        principal: Principal,
+        principal: Optional[Principal],
         authn_access_tags: Optional[AccessTags],
         authn_scopes: Scopes,
     ) -> Scopes:
@@ -54,7 +54,7 @@ class DummyAccessPolicy(AccessPolicy):
     async def filters(
         self,
         node: BaseAdapter,
-        principal: Principal,
+        principal: Optional[Principal],
         authn_access_tags: Optional[AccessTags],
         authn_scopes: Scopes,
         scopes: Scopes,
@@ -355,7 +355,7 @@ class TagBasedAccessPolicy(AccessPolicy):
     async def allowed_scopes(
         self,
         node: BaseAdapter,
-        principal: Principal,
+        principal: Optional[Principal],
         authn_access_tags: Optional[AccessTags],
         authn_scopes: Scopes,
     ) -> Scopes:
@@ -368,17 +368,15 @@ class TagBasedAccessPolicy(AccessPolicy):
             allowed = self.scopes
         else:
             if principal is None:
+                # Anonymous: only public tags grant access.
                 identifier = None
-            elif principal.type == "service":
-                identifier = str(principal.uuid)
+                principal_tag = set()
             else:
-                identifier = self._get_id(principal)
-
-            principal_tag = (
-                self._get_principal_tag(principal.type, identifier)
-                if identifier is not None
-                else set()
-            )
+                if principal.type == "service":
+                    identifier = str(principal.uuid)
+                else:
+                    identifier = self._get_id(principal)
+                principal_tag = self._get_principal_tag(principal.type, identifier)
 
             allowed = set()
             for tag in node.access_tags:
@@ -405,7 +403,7 @@ class TagBasedAccessPolicy(AccessPolicy):
     async def filters(
         self,
         node: BaseAdapter,
-        principal: Principal,
+        principal: Optional[Principal],
         authn_access_tags: Optional[AccessTags],
         authn_scopes: Scopes,
         scopes: Scopes,
@@ -509,7 +507,7 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
     @abstractmethod
     def build_input(
         self,
-        principal: Principal,
+        principal: Optional[Principal],
         authn_access_tags: Optional[AccessTags],
         authn_scopes: Scopes,
         access_tags: Optional[AccessTags] = None,
@@ -575,7 +573,7 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
     async def filters(
         self,
         node: BaseAdapter,
-        principal: Principal,
+        principal: Optional[Principal],
         authn_access_tags: Optional[AccessTags],
         authn_scopes: Scopes,
         scopes: Scopes,
@@ -595,7 +593,7 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
     async def allowed_scopes(
         self,
         node: BaseAdapter,
-        principal: Principal,
+        principal: Optional[Principal],
         authn_access_tags: Optional[AccessTags],
         authn_scopes: Scopes,
     ) -> Scopes:

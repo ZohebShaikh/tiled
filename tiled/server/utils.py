@@ -106,7 +106,7 @@ def _get_origin(request_headers: Mapping[str, str], scope: Scope) -> str:
 async def filter_for_access(
     entry,
     access_policy: Optional[AccessPolicy],
-    principal: Principal,
+    principal: Optional[Principal],
     authn_access_tags: Optional[AccessTags],
     authn_scopes: Scopes,
     scopes: Sequence[str],
