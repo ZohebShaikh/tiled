@@ -16,7 +16,7 @@ import contextlib
 import json
 import urllib.parse
 
-import httpx
+import httpx2 as httpx
 import pytest
 import uvicorn
 from starlette.types import ASGIApp, Receive, Scope, Send

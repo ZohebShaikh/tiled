@@ -283,7 +283,6 @@ test = [
     "pytest-asyncio",
     "pytest-mock",
     "pytest-rerunfailures",
-    "respx", # Mocking library for httpx; works against httpx2 via httpx2.alias_httpx()
     "python3-saml",
     "types-cachetools",
     "pytest-cov",

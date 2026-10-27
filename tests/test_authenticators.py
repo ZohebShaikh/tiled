@@ -13,7 +13,6 @@ from fastapi import HTTPException
 from fastapi.security import SecurityScopes
 from jwt import ExpiredSignatureError
 from jwt.algorithms import RSAAlgorithm
-from respx import MockRouter
 from starlette.requests import Request
 from starlette.status import HTTP_401_UNAUTHORIZED
 
@@ -28,6 +27,8 @@ from tiled.authenticators import (
 )
 from tiled.server.authentication import _extract_scopes, check_scopes, decode_token
 from tiled.server.settings import Settings
+
+from .http_mock import MockRouter
 
 # Set this if there is an LDAP container running for testing.
 # See continuous_integration/docker-configs/ldap-docker-compose.yml
@@ -82,18 +83,18 @@ def well_known_url(base_url: str) -> str:
 
 @pytest.fixture
 def mock_oidc_server(
-    respx_mock: MockRouter,
+    http_mock: MockRouter,
     well_known_url: str,
     well_known_response: dict[str, Any],
     json_web_keyset: list[dict[str, Any]],
 ) -> MockRouter:
-    respx_mock.get(well_known_url).mock(
+    http_mock.get(well_known_url).mock(
         return_value=httpx.Response(httpx.codes.OK, json=well_known_response)
     )
-    respx_mock.get(well_known_response["jwks_uri"]).mock(
+    http_mock.get(well_known_response["jwks_uri"]).mock(
         return_value=httpx.Response(httpx.codes.OK, json={"keys": json_web_keyset})
     )
-    return respx_mock
+    return http_mock
 
 
 def test_oidc_authenticator_caching(
@@ -505,7 +506,7 @@ async def test_OIDCAuthenticator_mock(
     root_path: str
 ):
     """
-    Test OIDCAuthenticator with mocked external dependencies using respx
+    Test OIDCAuthenticator with mocked external dependencies using a mocked HTTP transport
     and the impact of root path on the redirect_uri used in the token exchange.
     """
     # Mock JWT token payload

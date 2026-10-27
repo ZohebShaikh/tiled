@@ -13,7 +13,6 @@ from urllib.parse import quote as urlquote
 import anyio
 import httpx2 as httpx
 import pytest
-import respx
 import stamina
 from fastapi import FastAPI, HTTPException
 from httpx2 import Response
@@ -46,6 +45,7 @@ from tiled.server.webhooks import (
 )
 
 from .conftest import TOY_AUTHENTICATION
+from .http_mock import MockRouter, mock_http
 from .utils import enter_username_password
 
 WEBHOOK_URL = "https://webhook.example.com/tiled-events"
@@ -68,15 +68,15 @@ def _register_webhook(
     )
 
 
-def _capturing_mock() -> list[dict[str, Any]]:
-    """Attach a respx side-effect that captures decoded payloads and returns 200."""
+def _capturing_mock(http_mock: MockRouter) -> list[dict[str, Any]]:
+    """Attach a mock side-effect that captures decoded payloads and returns 200."""
     received: list[dict[str, Any]] = []
 
     def _capture(request: httpx.Request) -> Response:
         received.append(json.loads(request.content))
         return Response(200)
 
-    respx.post(WEBHOOK_URL).mock(side_effect=_capture)
+    http_mock.post(WEBHOOK_URL).mock(side_effect=_capture)
     return received
 
 
@@ -211,8 +211,8 @@ async def test_deliver_success_updates_delivery_row(
     delivery, session_factory = mock_delivery_session
     payload: dict[str, Any] = {"type": "container-child-created"}
 
-    with respx.mock:
-        respx.post(WEBHOOK_URL).mock(return_value=Response(200))
+    with mock_http() as http_mock:
+        http_mock.post(WEBHOOK_URL).mock(return_value=Response(200))
         async with httpx.AsyncClient() as c:
             await _deliver(
                 client=c,
@@ -238,8 +238,8 @@ async def test_deliver_retries_on_failure(
     payload: dict[str, Any] = {"type": "container-child-created"}
 
     with caplog.at_level("CRITICAL"):  # suppress expected retry WARNING/ERROR logs
-        with respx.mock:
-            respx.post(WEBHOOK_URL).mock(return_value=Response(500))
+        with mock_http() as http_mock:
+            http_mock.post(WEBHOOK_URL).mock(return_value=Response(500))
             with stamina.set_testing(True, attempts=MAX_ATTEMPTS):
                 async with httpx.AsyncClient() as c:
                     await _deliver(
@@ -289,11 +289,14 @@ class TestWebhookIntegration:
         """Register a catch-all webhook on the root node and return its id."""
         return _register_webhook(http).id
 
-    @respx.mock
     def test_register_webhook_and_fires_on_create_container(
-        self, http: httpx.Client, client: Container, node_key: str
+        self,
+        http_mock: MockRouter,
+        http: httpx.Client,
+        client: Container,
+        node_key: str,
     ) -> None:
-        received = _capturing_mock()
+        received = _capturing_mock(http_mock)
 
         _register_webhook(http, events=[EventType.container_child_created])
         client.create_container(node_key, metadata={"material": "NiPS3"})
@@ -303,9 +306,10 @@ class TestWebhookIntegration:
         assert event["type"] == EventType.container_child_created
         assert event["key"] == node_key
 
-    @respx.mock
-    def test_register_webhook_returns_webhook_in_list(self, http: httpx.Client) -> None:
-        respx.post(WEBHOOK_URL).mock(return_value=Response(200))
+    def test_register_webhook_returns_webhook_in_list(
+        self, http_mock: MockRouter, http: httpx.Client
+    ) -> None:
+        http_mock.post(WEBHOOK_URL).mock(return_value=Response(200))
 
         http.post(
             "/api/v1/webhooks/target/",
@@ -320,19 +324,25 @@ class TestWebhookIntegration:
         assert len(webhooks) == 1
         assert webhooks[0].url.unicode_string() == WEBHOOK_URL
 
-    @respx.mock
     def test_delete_webhook_stops_delivery(
-        self, http: httpx.Client, client: Container, node_key: str
+        self,
+        http_mock: MockRouter,
+        http: httpx.Client,
+        client: Container,
+        node_key: str,
     ) -> None:
-        route = respx.post(WEBHOOK_URL).mock(return_value=Response(200))
+        route = http_mock.post(WEBHOOK_URL).mock(return_value=Response(200))
         wh = _register_webhook(http)
         http.delete(f"/api/v1/webhooks/{wh.id}").raise_for_status()
         client.create_container(node_key)
         assert not route.called
 
-    @respx.mock
     def test_dispatcher_hmac_signature(
-        self, http: httpx.Client, client: Container, node_key: str
+        self,
+        http_mock: MockRouter,
+        http: httpx.Client,
+        client: Container,
+        node_key: str,
     ) -> None:
         secret = "mysecret"
         received_headers: dict[str, str] = {}
@@ -341,19 +351,18 @@ class TestWebhookIntegration:
             received_headers.update(dict(request.headers))
             return Response(200)
 
-        respx.post(WEBHOOK_URL).mock(side_effect=capture)
+        http_mock.post(WEBHOOK_URL).mock(side_effect=capture)
         _register_webhook(http, secret=secret)
         client.create_container(node_key)
 
         sig = received_headers.get("x-tiled-signature", "")
         assert sig.startswith("sha256=")
 
-    @respx.mock
     def test_secret_stored_encrypted_not_plaintext(
-        self, app: FastAPI, http: httpx.Client
+        self, http_mock: MockRouter, app: FastAPI, http: httpx.Client
     ) -> None:
         secret = "super-secret-value"
-        respx.post(WEBHOOK_URL).mock(return_value=Response(200))
+        http_mock.post(WEBHOOK_URL).mock(return_value=Response(200))
         _register_webhook(http, secret=secret)
 
         # Directly query the DB to inspect the stored value.
@@ -377,11 +386,14 @@ class TestWebhookIntegration:
         # Fernet tokens are base64 and start with 'g' (version byte 0x80)
         assert stored.startswith("g")
 
-    @respx.mock
     def test_webhook_fires_for_descendant_node(
-        self, http: httpx.Client, client: Container, node_key: str
+        self,
+        http_mock: MockRouter,
+        http: httpx.Client,
+        client: Container,
+        node_key: str,
     ) -> None:
-        received = _capturing_mock()
+        received = _capturing_mock(http_mock)
         _register_webhook(http)
 
         dataset = client.create_container(node_key)
@@ -392,15 +404,15 @@ class TestWebhookIntegration:
         assert [node_key] in paths
         assert [node_key, "child"] in paths
 
-    @respx.mock
     def test_delivery_history_endpoint(
         self,
+        http_mock: MockRouter,
         http: httpx.Client,
         client: Container,
         registered_webhook: int,
         node_key: str,
     ) -> None:
-        respx.post(WEBHOOK_URL).mock(return_value=Response(200))
+        http_mock.post(WEBHOOK_URL).mock(return_value=Response(200))
 
         client.create_container(node_key)
 
@@ -414,9 +426,9 @@ class TestWebhookIntegration:
         assert len(history) >= 1
         assert history[0].webhook_id == registered_webhook
 
-    @respx.mock
     def test_subnode_webhook_fires_for_descendant_only(
         self,
+        http_mock: MockRouter,
         http: httpx.Client,
         client: Container,
         node_key: str,
@@ -428,7 +440,7 @@ class TestWebhookIntegration:
         sibling_key = f"{node_key}_sibling"
         sibling = client.create_container(sibling_key)
 
-        received = _capturing_mock()
+        received = _capturing_mock(http_mock)
 
         # Register webhook on node_key only (not root, not sibling).
         wh = _register_webhook(http, path=node_key)
@@ -445,9 +457,9 @@ class TestWebhookIntegration:
             sibling_key in str(p) for p in paths
         ), "unexpected event for sibling sub-tree"
 
-    @respx.mock
     def test_subnode_webhook_in_list_for_its_path(
         self,
+        http_mock: MockRouter,
         http: httpx.Client,
         client: Container,
         node_key: str,
@@ -456,7 +468,7 @@ class TestWebhookIntegration:
         """A webhook registered on a sub-node is returned by GET /webhooks/target/{node}
         (webhooks on that node) but absent from GET /webhooks/target/ (webhooks on root).
         """
-        respx.post(WEBHOOK_URL).mock(return_value=Response(200))
+        http_mock.post(WEBHOOK_URL).mock(return_value=Response(200))
 
         client.create_container(node_key)
         wh = _register_webhook(http, path=node_key)
@@ -477,11 +489,14 @@ class TestWebhookIntegration:
         ]
         assert not any(w.id == wh.id for w in root_webhooks)
 
-    @respx.mock
     def test_metadata_updated_fires_webhook(
-        self, http: httpx.Client, client: Container, node_key: str
+        self,
+        http_mock: MockRouter,
+        http: httpx.Client,
+        client: Container,
+        node_key: str,
     ) -> None:
-        received = _capturing_mock()
+        received = _capturing_mock(http_mock)
         _register_webhook(http, events=[EventType.container_child_metadata_updated])
 
         node = client.create_container(node_key, metadata={"color": "blue"})
@@ -492,13 +507,16 @@ class TestWebhookIntegration:
         assert event["type"] == EventType.container_child_metadata_updated
         assert event["key"] == node_key
 
-    @respx.mock
     def test_event_filter_excludes_wrong_type(
-        self, http: httpx.Client, client: Container, node_key: str
+        self,
+        http_mock: MockRouter,
+        http: httpx.Client,
+        client: Container,
+        node_key: str,
     ) -> None:
         """A webhook registered for container_child_created must NOT fire when
         container_child_metadata_updated is dispatched."""
-        received = _capturing_mock()
+        received = _capturing_mock(http_mock)
         _register_webhook(http, events=[EventType.container_child_created])
 
         node = client.create_container(node_key, metadata={"x": 1})
@@ -510,13 +528,16 @@ class TestWebhookIntegration:
             "container_child_metadata_updated"
         )
 
-    @respx.mock
     def test_metadata_payload_correct_when_only_specs_updated(
-        self, http: httpx.Client, client: Container, node_key: str
+        self,
+        http_mock: MockRouter,
+        http: httpx.Client,
+        client: Container,
+        node_key: str,
     ) -> None:
         """When replace_metadata is called with specs only (no metadata argument),
         the webhook payload must carry the pre-existing metadata, not an empty dict."""
-        received = _capturing_mock()
+        received = _capturing_mock(http_mock)
         _register_webhook(http, events=[EventType.container_child_metadata_updated])
 
         node = client.create_container(node_key, metadata={"color": "blue"})
@@ -533,16 +554,16 @@ class TestWebhookIntegration:
             "color": "blue"
         }, "Webhook payload should include pre-existing metadata when only specs changed"
 
-    @respx.mock
     def test_webhook_cascade_deleted_when_node_deleted(
         self,
+        http_mock: MockRouter,
         http: httpx.Client,
         client: Container,
         node_key: str,
     ) -> None:
         """Deleting a node must cascade-delete its webhooks so that subsequent
         events on other nodes do NOT trigger the now-deleted webhook."""
-        received = _capturing_mock()
+        received = _capturing_mock(http_mock)
 
         # Create a sub-node and register a webhook on it.
         client.create_container(node_key)
@@ -562,12 +583,15 @@ class TestWebhookIntegration:
             "was removed (CASCADE delete failed)"
         )
 
-    @respx.mock
     def test_close_stream_fires_webhook(
-        self, http: httpx.Client, client: Container, node_key: str
+        self,
+        http_mock: MockRouter,
+        http: httpx.Client,
+        client: Container,
+        node_key: str,
     ) -> None:
         """Calling close_stream on a node must dispatch a stream-closed webhook event."""
-        received = _capturing_mock()
+        received = _capturing_mock(http_mock)
 
         client.create_container(node_key)
         _register_webhook(http, events=[EventType.stream_closed])
@@ -624,8 +648,8 @@ def test_history_and_delete_on_sub_path_mounted_catalog(
     with patch("tiled.server.webhook_router.check_url_ssrf_safety"):
         with Context.from_app(build_app_from_config(config)) as context:
             http = context.http_client
-            with respx.mock:
-                received = _capturing_mock()
+            with mock_http() as http_mock:
+                received = _capturing_mock(http_mock)
                 webhook = _register_webhook(http, path="sub")
                 from_context(context)["sub"].create_container("x")
                 assert len(received) == 1
@@ -932,8 +956,8 @@ async def test_deliver_network_error_sets_outcome_failed(
     delivery, session_factory = mock_delivery_session
     payload: dict[str, Any] = {"type": "container-child-created"}
 
-    with respx.mock:
-        respx.post(WEBHOOK_URL).mock(side_effect=httpx.ConnectError("refused"))
+    with mock_http() as http_mock:
+        http_mock.post(WEBHOOK_URL).mock(side_effect=httpx.ConnectError("refused"))
         async with httpx.AsyncClient() as c:
             await _deliver(
                 client=c,
@@ -964,8 +988,8 @@ async def test_deliver_deleted_row_does_not_raise(
 
     payload: dict[str, Any] = {"type": "container-child-created"}
 
-    with respx.mock:
-        respx.post(WEBHOOK_URL).mock(return_value=Response(200))
+    with mock_http() as http_mock:
+        http_mock.post(WEBHOOK_URL).mock(return_value=Response(200))
         async with httpx.AsyncClient() as c:
             await _deliver(
                 client=c,
@@ -992,8 +1016,8 @@ async def test_deliver_sends_event_id_header(
 
     payload: dict[str, Any] = {"type": "container-child-created"}
 
-    with respx.mock:
-        respx.post(WEBHOOK_URL).mock(side_effect=_capture)
+    with mock_http() as http_mock:
+        http_mock.post(WEBHOOK_URL).mock(side_effect=_capture)
         async with httpx.AsyncClient() as c:
             await _deliver(
                 client=c,
@@ -1023,8 +1047,8 @@ async def test_deliver_no_signature_when_no_secret(
 
     payload: dict[str, Any] = {"type": "container-child-created"}
 
-    with respx.mock:
-        respx.post(WEBHOOK_URL).mock(side_effect=_capture)
+    with mock_http() as http_mock:
+        http_mock.post(WEBHOOK_URL).mock(side_effect=_capture)
         async with httpx.AsyncClient() as c:
             await _deliver(
                 client=c,

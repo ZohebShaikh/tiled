@@ -21,6 +21,7 @@ from tiled.server.app import build_app
 from tiled.server.settings import get_settings
 from tiled.utils import ensure_specified_sql_driver
 
+from .http_mock import mock_http
 from .utils import enter_username_password as utils_enter_uname_passwd
 from .utils import temp_postgres, temp_postgres_sync
 
@@ -65,6 +66,13 @@ def s3_bucket_uri():
     finally:
         del os.environ["TILED_TEST_BUCKET"]
         server.stop()
+
+
+@pytest.fixture
+def http_mock():
+    "Mock outgoing httpx2 network requests; see tests/http_mock.py."
+    with mock_http() as router:
+        yield router
 
 
 @pytest.fixture(autouse=True, scope="module")

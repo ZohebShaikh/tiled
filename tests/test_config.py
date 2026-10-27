@@ -3,7 +3,6 @@ from typing import Any
 
 import httpx2 as httpx
 import pytest
-import respx
 from fastapi import APIRouter
 from pydantic import ValidationError
 
@@ -12,6 +11,8 @@ from tiled.adapters.mapping import MapAdapter
 from tiled.client import Context, from_context
 from tiled.config import Config, parse_configs
 from tiled.server.app import build_app_from_config
+
+from .http_mock import MockRouter
 
 tree = MapAdapter({"example": ArrayAdapter.from_array([1, 2, 3])})
 
@@ -218,11 +219,10 @@ def test_duplicate_auth_providers():
         )
 
 
-@respx.mock
 def test_proxied_authenticator_single_instance_required(
-    well_known_response: dict[str, Any]
+    http_mock: MockRouter, well_known_response: dict[str, Any]
 ):
-    respx.get("http://example.com").mock(
+    http_mock.get("http://example.com").mock(
         side_effect=[
             httpx.Response(httpx.codes.OK, json=well_known_response),
             httpx.Response(httpx.codes.OK, json=well_known_response),
@@ -266,11 +266,11 @@ def test_proxied_authenticator_single_instance_required(
         )
 
 
-@respx.mock
 def test_proxied_authenticator_is_not_used_with_other_authenticators(
+    http_mock: MockRouter,
     well_known_response: dict[str, Any],
 ):
-    respx.get("http://example.com").mock(
+    http_mock.get("http://example.com").mock(
         return_value=httpx.Response(httpx.codes.OK, json=well_known_response)
     )
     with pytest.raises(

@@ -5,9 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import httpx2 as httpx
 import pytest
-import respx
 import stamina
-from respx import MockRouter
 
 from tiled.adapters.mapping import MapAdapter
 from tiled.client import Context
@@ -15,6 +13,8 @@ from tiled.client.auth import TiledAuth
 from tiled.client.constructors import from_context
 from tiled.client.context import device_code_grant, prompt_for_credentials
 from tiled.server.app import build_app_from_config
+
+from .http_mock import MockRouter, mock_http
 
 tree = MapAdapter({})
 
@@ -70,14 +70,14 @@ def tokens_response() -> Dict[str, str]:
 
 @pytest.fixture
 def mock_oidc_server(
-    respx_mock: MockRouter,
+    http_mock: MockRouter,
     base_url: str,
     well_known_url: str,
     well_known_response: Dict[str, Any],
     tokens_response: Dict[str, Union[str, int]],
     oidc_config: Dict[str, Any],
 ) -> MockRouter:
-    respx_mock.get(well_known_url).mock(
+    http_mock.get(well_known_url).mock(
         return_value=httpx.Response(httpx.codes.OK, json=well_known_response)
     )
 
@@ -89,7 +89,7 @@ def mock_oidc_server(
     verification_uri = f"{base_url}device"
     verification_uri_complete = f"{base_url}device?user_code={user_code}"
 
-    respx_mock.post(
+    http_mock.post(
         well_known_response["device_authorization_endpoint"],
         data={"client_id": device_flow_client_id, "scope": "offline_access openid"},
     ).mock(
@@ -106,7 +106,7 @@ def mock_oidc_server(
         )
     )
 
-    respx_mock.post(
+    http_mock.post(
         well_known_response["token_endpoint"],
         data={
             "device_code": device_code,
@@ -120,7 +120,7 @@ def mock_oidc_server(
             json=tokens_response,
         )
     )
-    return respx_mock
+    return http_mock
 
 
 @pytest.fixture
@@ -311,11 +311,11 @@ def test_client_refresh(
     client = from_context(context)
     base_url = str(context.http_client.base_url).replace("b'", "").replace("'", "")
 
-    with respx.mock:
+    with mock_http() as http_mock:
         # Change to httpx Client from TestClient FastAPI to mock responses
         context.http_client = httpx_client
 
-        respx.post(
+        http_mock.post(
             context.server_info.authentication.links.refresh_session,
             data={
                 "client_id": context.client_id,
@@ -328,7 +328,7 @@ def test_client_refresh(
                 status_code=httpx.codes.OK, json=tokens_response
             )
         )
-        respx.get(f"{base_url}/api/v1/auth/whoami").mock(
+        http_mock.get(f"{base_url}/api/v1/auth/whoami").mock(
             side_effect=[
                 httpx.Response(status_code=httpx.codes.UNAUTHORIZED),
                 httpx.Response(status_code=httpx.codes.OK, json={}),
@@ -359,11 +359,11 @@ def test_logout(
     httpx_client.auth.sync_tokens(tokens_response)
     client = from_context(context)
 
-    with respx.mock:
+    with mock_http() as http_mock:
         # Change to httpx Client from TestClient FastAPI to mock responses
         context.http_client = httpx_client
 
-        respx.get(
+        http_mock.get(
             context.server_info.authentication.links.logout,
             params={
                 "id_token_hint": tokens_response["id_token"],
@@ -392,7 +392,7 @@ def tiled_mediated_urls(base_url: str) -> Dict[str, str]:
 
 @pytest.fixture
 def mock_tiled_mediated_server(
-    respx_mock: MockRouter,
+    http_mock: MockRouter,
     tiled_mediated_urls: Dict[str, str],
     tokens_response: Dict[str, Union[str, int]],
 ) -> MockRouter:
@@ -410,7 +410,7 @@ def mock_tiled_mediated_server(
     user_code = "LCWE-ROXW"
 
     # 1. POST to Tiled's /authorize starts the flow and returns the two URIs.
-    respx_mock.post(tiled_mediated_urls["auth_endpoint"], name="authorize").mock(
+    http_mock.post(tiled_mediated_urls["auth_endpoint"], name="authorize").mock(
         return_value=httpx.Response(
             status_code=httpx.codes.OK,
             json={
@@ -425,13 +425,13 @@ def mock_tiled_mediated_server(
     )
 
     # 2. POST to Tiled's /token endpoint (the client polls this) returns tokens.
-    respx_mock.post(tiled_mediated_urls["verification_uri"], name="token_polling").mock(
+    http_mock.post(tiled_mediated_urls["verification_uri"], name="token_polling").mock(
         return_value=httpx.Response(
             status_code=httpx.codes.OK,
             json=tokens_response,
         )
     )
-    return respx_mock
+    return http_mock
 
 
 @patch("tiled.client.context.time.sleep")
