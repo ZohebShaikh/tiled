@@ -3,8 +3,9 @@ from pathlib import Path
 from sys import intern
 
 import yaml
-from sqlalchemy import delete, func, insert, inspect, select, tuple_, update
+from sqlalchemy import Enum, delete, func, insert, inspect, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_upsert
+from sqlalchemy.dialects.postgresql.base import PGInspector
 from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
 
 from ..authn_database import orm as authn_orm
@@ -19,7 +20,9 @@ from .scopes import validate_scopes
 # Name of the scope enum, shared by the PostgreSQL enum type and the SQLite
 # CHECK constraint that stands in for it. Taken from the ORM so that the two
 # cannot drift.
-SCOPE_ENUM_NAME = orm.AccessGrant.__table__.c.scope.type.name
+_scope_type = orm.AccessGrant.__table__.c.scope.type
+assert isinstance(_scope_type, Enum)
+SCOPE_ENUM_NAME = _scope_type.name
 
 # The access_grants junction table, joined to the tables its two foreign keys
 # reference so that it can be queried by name. The scope is stored inline on
@@ -32,6 +35,12 @@ access_grants_named = orm.AccessGrant.__table__.join(
     orm.AccessTagsPrincipal.__table__,
     orm.AccessTagsPrincipal.id == orm.AccessGrant.principal_id,
 )
+
+
+def _pg_inspector(connection):
+    inspector = inspect(connection)
+    assert isinstance(inspector, PGInspector)
+    return inspector
 
 
 class AccessTagsParser:
@@ -54,15 +63,21 @@ class AccessTagsParser:
             # shared with the catalog adapter connected to the same database.
             self._engine = get_database_engine(database_settings)
 
+    @property
+    def engine(self):
+        if self._engine is None:
+            raise RuntimeError("AccessTagsParser is not connected to a database")
+        return self._engine
+
     async def is_tag_defined(self, name):
         statement = select(orm.AccessTag.id).where(orm.AccessTag.name == name)
-        async with self._engine.connect() as conn:
+        async with self.engine.connect() as conn:
             found_tagname = (await conn.execute(statement)).first() is not None
         return found_tagname
 
     async def get_public_tags(self):
         statement = select(orm.AccessTag.name).where(orm.AccessTag.is_public)
-        async with self._engine.connect() as conn:
+        async with self.engine.connect() as conn:
             public_tags = set((await conn.execute(statement)).scalars())
         return public_tags
 
@@ -71,9 +86,11 @@ class AccessTagsParser:
         The scope values that the catalog database will actually accept,
         read from its schema definition.
         """
-        async with self._engine.connect() as conn:
+        async with self.engine.connect() as conn:
             if conn.dialect.name == "postgresql":
-                enums = await conn.run_sync(lambda sync: inspect(sync).get_enums())
+                enums = await conn.run_sync(
+                    lambda sync: _pg_inspector(sync).get_enums()
+                )
                 for enum in enums:
                     if enum["name"] == SCOPE_ENUM_NAME:
                         return set(enum["labels"])
@@ -104,7 +121,7 @@ class AccessTagsParser:
                 orm.AccessTagsPrincipal.name == username,
             )
         )
-        async with self._engine.connect() as conn:
+        async with self.engine.connect() as conn:
             user_tag_scopes = set((await conn.execute(statement)).scalars())
         return user_tag_scopes
 
@@ -124,7 +141,7 @@ class AccessTagsParser:
                 orm.AccessTagsPrincipal.name == username,
             )
         )
-        async with self._engine.connect() as conn:
+        async with self.engine.connect() as conn:
             found_owner = (await conn.execute(statement)).first() is not None
         return found_owner
 
@@ -132,7 +149,7 @@ class AccessTagsParser:
         statement = select(orm.AccessTag.id).where(
             orm.AccessTag.name == name, orm.AccessTag.is_public
         )
-        async with self._engine.connect() as conn:
+        async with self.engine.connect() as conn:
             found_public = (await conn.execute(statement)).first() is not None
         return found_public
 
@@ -145,7 +162,7 @@ class AccessTagsParser:
                 orm.AccessTagsPrincipal.name == username,
             )
         )
-        async with self._engine.connect() as conn:
+        async with self.engine.connect() as conn:
             user_scope_tags = set((await conn.execute(statement)).scalars())
         return user_scope_tags
 
@@ -217,10 +234,10 @@ async def update_access_tags_tables(engine, tags, owners, public_tags):
     whatever the reason for its absence.
     """
     upsert = _upsert(engine)
-    tags_table = orm.AccessTag.__table__
-    users_table = orm.AccessTagsPrincipal.__table__
-    access_grants_table = orm.AccessGrant.__table__
-    tag_owners_table = orm.AccessTagOwnerAssociation.__table__
+    tags_table = orm.AccessTag
+    users_table = orm.AccessTagsPrincipal
+    access_grants_table = orm.AccessGrant
+    tag_owners_table = orm.AccessTagOwnerAssociation
 
     # stage all items in memory, deduplicated
     # (a name may appear in both tags and owners)
@@ -270,8 +287,8 @@ async def update_access_tags_tables(engine, tags, owners, public_tags):
         stale_tags = {
             name: tag_id
             for tag_id, name in await connection.execute(
-                select(tags_table.c.id, tags_table.c.name).where(
-                    tags_table.c.name.not_in(list(all_tags))
+                select(tags_table.id, tags_table.name).where(
+                    tags_table.name.not_in(list(all_tags))
                 )
             )
         }
@@ -310,7 +327,7 @@ async def update_access_tags_tables(engine, tags, owners, public_tags):
             )
             await connection.execute(
                 update(tags_table)
-                .where(tags_table.c.id.in_(list(retained_tag_ids)))
+                .where(tags_table.id.in_(list(retained_tag_ids)))
                 .values(is_public=False)
             )
 
@@ -320,23 +337,23 @@ async def update_access_tags_tables(engine, tags, owners, public_tags):
         ]
         if deleted_tag_ids:
             await connection.execute(
-                delete(tags_table).where(tags_table.c.id.in_(deleted_tag_ids))
+                delete(tags_table).where(tags_table.id.in_(deleted_tag_ids))
             )
         await connection.execute(
-            delete(users_table).where(users_table.c.name.not_in(list(all_users)))
+            delete(users_table).where(users_table.name.not_in(list(all_users)))
         )
 
         # load db IDs for items into memory
         tags_to_id = {
             intern(name): tag_id
             for tag_id, name in await connection.execute(
-                select(tags_table.c.id, tags_table.c.name)
+                select(tags_table.id, tags_table.name)
             )
         }
         users_to_id = {
             intern(name): user_id
             for user_id, name in await connection.execute(
-                select(users_table.c.id, users_table.c.name)
+                select(users_table.id, users_table.name)
             )
         }
         # flatten relationships and diff against current table contents.
@@ -355,16 +372,16 @@ async def update_access_tags_tables(engine, tags, owners, public_tags):
             tuple(row)
             for row in await connection.execute(
                 select(
-                    access_grants_table.c.tag_id,
-                    access_grants_table.c.principal_id,
-                    access_grants_table.c.scope,
+                    access_grants_table.tag_id,
+                    access_grants_table.principal_id,
+                    access_grants_table.scope,
                 )
             )
         }
         existing_tag_owners = {
             tuple(row)
             for row in await connection.execute(
-                select(tag_owners_table.c.tag_id, tag_owners_table.c.principal_id)
+                select(tag_owners_table.tag_id, tag_owners_table.principal_id)
             )
         }
 
@@ -383,9 +400,9 @@ async def update_access_tags_tables(engine, tags, owners, public_tags):
             await connection.execute(
                 delete(access_grants_table).where(
                     tuple_(
-                        access_grants_table.c.tag_id,
-                        access_grants_table.c.principal_id,
-                        access_grants_table.c.scope,
+                        access_grants_table.tag_id,
+                        access_grants_table.principal_id,
+                        access_grants_table.scope,
                     ).in_(list(stale_tags_users_scopes))
                 )
             )
@@ -402,9 +419,9 @@ async def update_access_tags_tables(engine, tags, owners, public_tags):
         if stale_tag_owners:
             await connection.execute(
                 delete(tag_owners_table).where(
-                    tuple_(
-                        tag_owners_table.c.tag_id, tag_owners_table.c.principal_id
-                    ).in_(list(stale_tag_owners))
+                    tuple_(tag_owners_table.tag_id, tag_owners_table.principal_id).in_(
+                        list(stale_tag_owners)
+                    )
                 )
             )
 

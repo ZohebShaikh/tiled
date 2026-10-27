@@ -22,7 +22,7 @@ from typing import (
     Union,
 )
 
-from .utils import import_object
+from .utils import Sentinel, import_object
 
 JSON_ITEM = Union[
     str, int, float, Mapping[str, "JSON_ITEM"], Sequence["JSON_ITEM"], None
@@ -32,7 +32,8 @@ JSON = Mapping[str, JSON_ITEM]
 AccessTags = FrozenSet[str]
 Scopes = AbstractSet[str]
 Query = Any  # for now...
-Filters = List[Query]
+# A list of queries, or the NO_ACCESS sentinel (access_control.access_policies)
+Filters = Union[List[Query], Sentinel]
 Chunks = Tuple[Tuple[int, ...], ...]
 
 AppTask = Callable[[], Coroutine[None, None, Any]]

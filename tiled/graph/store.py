@@ -209,6 +209,8 @@ class GraphSQLAlchemyStore:
         database_settings: DatabaseSettings,
     ) -> "GraphSQLAlchemyStore":
         engine = get_database_engine(database_settings)
+        if engine is None:
+            raise ValueError("The graph store requires a database URI.")
         return cls(engine, owns_engine=False)
 
     async def resolve_access_tag_ids_for_read(self, names):
@@ -321,7 +323,11 @@ class GraphSQLAlchemyStore:
         id_ = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
         if node_id is not None and access_tags:
-            raise IntegrityError("entity node access tags", {}, None)
+            raise IntegrityError(
+                "entity node access tags",
+                {},
+                ValueError("A node-bound entity cannot have its own access tags"),
+            )
         async with self._engine.begin() as conn:
             await conn.execute(
                 insert(_entities).values(
@@ -346,6 +352,7 @@ class GraphSQLAlchemyStore:
                     ],
                 )
             record = await self._entity_record(conn, id_)
+        assert record is not None, "entity row missing right after its insert"
         return record
 
     async def get_entity(self, id: str) -> Optional[EntityRecord]:
@@ -436,7 +443,11 @@ class GraphSQLAlchemyStore:
                 and effective_node_id is not None
                 and access_tags
             ):
-                raise IntegrityError("entity node access tags", {}, None)
+                raise IntegrityError(
+                    "entity node access tags",
+                    {},
+                    ValueError("A node-bound entity cannot have its own access tags"),
+                )
             if existing.node_id is None and effective_node_id is not None:
                 # Becoming node-backed: shed own tags first, so the
                 # entities.node_id trigger sees no remaining associations.
@@ -457,7 +468,7 @@ class GraphSQLAlchemyStore:
                             "(no node_id): it would leave the entity without access "
                             "control. Provide a list of tags or set node_id.",
                             {},
-                            None,
+                            ValueError("access_tags=None on a standalone entity"),
                         )
                     await conn.execute(
                         delete(_entity_access_tags).where(
@@ -519,6 +530,7 @@ class GraphSQLAlchemyStore:
             if not await self.get_entity(object_id):
                 raise ValueError(f"Object entity '{object_id}' not found") from exc
             raise
+        assert record is not None, "link row missing right after its insert"
         return record
 
     async def get_link(self, id: str) -> Optional[LinkRecord]:

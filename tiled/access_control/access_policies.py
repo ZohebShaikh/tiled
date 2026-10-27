@@ -11,7 +11,12 @@ from ..queries import AccessTagsFilter
 from ..server.schemas import Principal
 from ..type_aliases import AccessTags, Filters, Scopes
 from ..utils import Sentinel, import_object
-from .protocols import AccessPolicy, normalize_access_tags
+from .protocols import (
+    AccessPolicy,
+    AccessTaggedAdapter,
+    normalize_access_tags,
+    require_access_tags,
+)
 from .scopes import ALL_SCOPES, NO_SCOPES, PUBLIC_SCOPES, ScopeName, validate_scopes
 
 ALL_ACCESS = []
@@ -72,7 +77,7 @@ class TagBasedAccessPolicy(AccessPolicy):
         scopes=None,
     ):
         self.provider = provider
-        self.scopes = scopes if (scopes is not None) else ALL_SCOPES
+        self.scopes = frozenset(scopes) if (scopes is not None) else ALL_SCOPES
         validate_scopes(self.scopes, "TagBasedAccessPolicy 'scopes'")
 
         access_tags_parser = import_object(access_tags_parser)
@@ -226,6 +231,7 @@ class TagBasedAccessPolicy(AccessPolicy):
         authn_scopes: Scopes,
         access_tags: Optional[AccessTags],
     ) -> Tuple[bool, AccessTags]:
+        node_access_tags = require_access_tags(node)
         if principal.type == "service":
             identifier = str(principal.uuid)
         else:
@@ -233,7 +239,7 @@ class TagBasedAccessPolicy(AccessPolicy):
 
         if access_tags is None:
             logger.info("Node access_tags not modified; no access_tags provided.")
-            return False, node.access_tags
+            return False, node_access_tags
         try:
             access_tags = normalize_access_tags(access_tags)
         except TypeError as exc:
@@ -242,11 +248,11 @@ class TagBasedAccessPolicy(AccessPolicy):
                 "e.g. ['tag1', 'tag2', ...]\n"
                 f"Received {access_tags=}"
             ) from exc
-        if access_tags == node.access_tags:
+        if access_tags == node_access_tags:
             logger.info(
                 f"Node access_tags not modified; access tags are identical: {access_tags}"
             )
-            return False, node.access_tags
+            return False, node_access_tags
         if not access_tags:
             if not self._is_admin(authn_scopes):
                 raise ValueError(
@@ -266,7 +272,7 @@ class TagBasedAccessPolicy(AccessPolicy):
                     raise ValueError(
                         f"Cannot apply tag to node: API key is restricted to access tags: {authn_access_tags}."
                     )
-            if tag in node.access_tags:
+            if tag in node_access_tags:
                 # node already has this tag - no action.
                 include_public_tag = include_public_tag or (
                     tag.casefold() == self.public_tag
@@ -298,7 +304,7 @@ class TagBasedAccessPolicy(AccessPolicy):
             access_tags_from_policy.add(self.public_tag)
 
         # check for tags that need to be removed
-        for tag in node.access_tags.difference(access_tags_from_policy):
+        for tag in node_access_tags.difference(access_tags_from_policy):
             if authn_access_tags is not None:
                 if tag not in authn_access_tags:
                     raise ValueError(
@@ -340,7 +346,7 @@ class TagBasedAccessPolicy(AccessPolicy):
             if not all(scope in new_scopes for scope in self.unremovable_scopes):
                 raise ValueError(
                     f"Cannot modify tags on node: operation removes unremovable scopes.\n"
-                    f"The current access tags on this Node are: {node.access_tags}\n"
+                    f"The current access tags on this Node are: {node_access_tags}\n"
                     f"The new access_tags would be: {access_tags_from_policy}\n"
                     f"These scopes cannot be self-removed: "
                     f"{sorted(scope.value for scope in self.unremovable_scopes)}"
@@ -362,7 +368,7 @@ class TagBasedAccessPolicy(AccessPolicy):
         # If this is being called, filter_for_access has let us get this far.
         # However, filters and allowed_scopes should always be implemented to
         # give answers consistent with each other.
-        if not hasattr(node, "access_tags"):
+        if not isinstance(node, AccessTaggedAdapter):
             allowed = self.scopes
         elif self._is_admin(authn_scopes):
             allowed = self.scopes
@@ -408,11 +414,11 @@ class TagBasedAccessPolicy(AccessPolicy):
         authn_scopes: Scopes,
         scopes: Scopes,
     ) -> Filters:
-        if not hasattr(node, "access_tags"):
+        if not isinstance(node, AccessTaggedAdapter):
             return ALL_ACCESS
         if self._is_admin(authn_scopes):
             return ALL_ACCESS
-        if not scopes.issubset(self.scopes):
+        if not scopes <= self.scopes:
             return NO_ACCESS
 
         tag_list = set()
@@ -433,7 +439,7 @@ class TagBasedAccessPolicy(AccessPolicy):
             )
             # Intrinsic self-grant from principal's own tag
             # Principal's tag qualifies if it covers every requested scope
-            if scopes.issubset(set(authn_scopes) & set(self.scopes)):
+            if scopes <= (set(authn_scopes) & set(self.scopes)):
                 tag_list.update(self._get_principal_tag(principal.type, identifier))
 
         tag_list.update(
@@ -448,7 +454,7 @@ class TagBasedAccessPolicy(AccessPolicy):
         if authn_access_tags is not None:
             tag_list.intersection_update(authn_access_tags)
 
-        return [AccessTagsFilter(normalize_access_tags(tag_list))]
+        return [AccessTagsFilter(list(normalize_access_tags(tag_list)))]
 
 
 T = TypeVar("T")
@@ -555,12 +561,13 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
         authn_scopes: Scopes,
         access_tags: Optional[AccessTags],
     ) -> Tuple[bool, AccessTags]:
+        node_access_tags = require_access_tags(node)
         # fix this to match TBAP
-        if access_tags == node.access_tags:
+        if access_tags == node_access_tags:
             logger.info(
                 f"Node access_tags not modified; access_tags is identical: {access_tags}"
             )
-            return (False, node.access_tags)
+            return (False, node_access_tags)
         decision = await self._get_external_decision(
             self._modify_node,
             self.build_input(principal, authn_access_tags, authn_scopes, access_tags),
@@ -585,7 +592,9 @@ class ExternalPolicyDecisionPoint(AccessPolicy, ABC):
         )
         if access_tags_decision is not None:
             return [
-                AccessTagsFilter(normalize_access_tags(access_tags_decision.result))
+                AccessTagsFilter(
+                    list(normalize_access_tags(access_tags_decision.result))
+                )
             ]
         else:
             return NO_ACCESS

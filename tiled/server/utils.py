@@ -6,12 +6,12 @@ from typing import Any, Literal, Mapping, Optional, Sequence
 from fastapi import Request, WebSocket
 from starlette.types import Scope
 
-from ..access_control.access_policies import NO_ACCESS
 from ..access_control.protocols import AccessPolicy
 from ..adapters.mapping import MapAdapter
 from ..queries import AccessTagsFilter
 from ..server.schemas import Principal
 from ..type_aliases import AccessTags, Scopes
+from ..utils import Sentinel
 
 EMPTY_NODE = MapAdapter({})
 API_KEY_COOKIE_NAME = "tiled_api_key"
@@ -128,7 +128,7 @@ async def filter_for_access(
             queries = await access_policy.filters(
                 entry, principal, authn_access_tags, authn_scopes, set(scopes)
             )
-            if queries is NO_ACCESS:
+            if isinstance(queries, Sentinel):
                 entry = EMPTY_NODE
             else:
                 for query in queries:

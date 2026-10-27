@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from functools import cache, partial
 from pathlib import Path
 from textwrap import dedent
-from typing import Any, Optional, Union
+from typing import Any, AsyncIterator, Optional, Union
 
 import anyio
 import packaging.version
@@ -286,7 +286,7 @@ def build_app(
     # If we reach here, the no configuration problems were found.
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         "Manage lifespan events for each event loop that the app runs in"
         try:
             await startup_event()
@@ -594,7 +594,7 @@ def build_app(
             settings.authenticator = authenticator
         return settings
 
-    async def startup_event():
+    async def startup_event() -> None:
         from .. import __version__
 
         logger.info(f"Tiled version {__version__}")
@@ -885,7 +885,7 @@ def build_app(
                 asyncio.create_task(purge_expired_sessions_and_api_keys())
             )
 
-    async def shutdown_event():
+    async def shutdown_event() -> None:
         # Run shutdown tasks collected from trees (adapters).
         for task in app_tasks["shutdown"]:
             await task()
