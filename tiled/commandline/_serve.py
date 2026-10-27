@@ -505,6 +505,8 @@ or use an existing one:
             cli_cache_config["data_ttl"] = cache_data_ttl
         if cache_seq_ttl:
             cli_cache_config["seq_ttl"] = cache_seq_ttl
+        from ..config import StreamingCacheConfig
+
         # Apply defaults.
         cache_config = StreamingCacheConfig(**cli_cache_config).model_dump()
     else:

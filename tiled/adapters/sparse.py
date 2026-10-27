@@ -122,6 +122,10 @@ class COOAdapter(SparseAdapter):
         -------
 
         """
+        if not blocks:
+            raise ValueError("At least one block is required.")
+        # Every block shares the same dtypes; take them from the first.
+        coords, data = next(iter(blocks.values()))
         local_blocks = {}
         for block, (coords, data) in blocks.items():
             offsets = []

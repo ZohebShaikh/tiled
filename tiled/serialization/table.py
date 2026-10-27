@@ -118,6 +118,7 @@ if modules_available("orjson"):
         Python-native equivalents, with missing values becoming None.
         """
         import numpy
+        import pandas
 
         arr = series.to_numpy(dtype=object, na_value=None)
 

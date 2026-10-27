@@ -43,7 +43,7 @@ from .utils import (
     client_for_item,
     handle_error,
     normalize_specs,
-    retry_context,
+    retry_call,
 )
 
 T = TypeVar("T")
@@ -375,8 +375,8 @@ class Subscription(abc.ABC):
         # Reset schema so first message on new connection is parsed as schema
         self._schema = None
 
-        needs_api_key = self.context.server_info.authentication.providers
-        if needs_api_key:
+        key_info = None
+        if self.context.server_info.authentication.providers:
             # Request a short-lived API key to use for authenticating the WS connection.
             key_info = self.context.create_api_key(
                 expires_in=API_KEY_LIFETIME, note="websocket"
@@ -390,7 +390,7 @@ class Subscription(abc.ABC):
         self._websocket.connect(api_key, start, max_size=max_size)
         self._connected_event.set()
 
-        if needs_api_key:
+        if key_info is not None:
             # The connection is made, so we no longer need the API key.
             # TODO: Implement single-use API keys so that revoking is not
             # necessary.
@@ -754,14 +754,14 @@ class LiveArrayRef(ArrayRef):
         "Fetch array"
         import numpy
 
-        for attempt in retry_context():
-            with attempt:
-                content = handle_error(
-                    self.subscription.context.http_client.get(
-                        self.uri,
-                        headers={"Accept": "application/octet-stream"},
-                    )
-                ).read()
+        content = retry_call(
+            lambda: handle_error(
+                self.subscription.context.http_client.get(
+                    self.uri,
+                    headers={"Accept": "application/octet-stream"},
+                )
+            ).read(),
+        )
         # Decode payload (bytes) into array.
         numpy_dtype = self.data_type.to_numpy_dtype()
         if self.patch:

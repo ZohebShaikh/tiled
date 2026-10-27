@@ -17,6 +17,7 @@ from .utils import (
     client_for_item,
     export_util,
     handle_error,
+    retry_call,
     retry_context,
     should_retry_if_unprocessed,
 )
@@ -122,30 +123,32 @@ class _DaskDataFrameClient(BaseClient):
         )
         with self.context.throttle():
             if url_length_for_get_request > self.URL_CHARACTER_LIMIT:
-                for attempt in retry_context(self.context):
-                    with attempt:
-                        content = handle_error(
-                            self.context.http_client.post(
-                                URL_PATH,
-                                headers={"Accept": APACHE_ARROW_FILE_MIME_TYPE},
-                                json=columns,
-                                params=params,
-                            )
-                        ).read()
+                content = retry_call(
+                    lambda: handle_error(
+                        self.context.http_client.post(
+                            URL_PATH,
+                            headers={"Accept": APACHE_ARROW_FILE_MIME_TYPE},
+                            json=columns,
+                            params=params,
+                        )
+                    ).read(),
+                    self.context,
+                )
             else:
                 if columns:
                     # Note: The singular/plural inconsistency here is because
                     # ["A", "B"] will be encoded in the URL as column=A&column=B
                     params["column"] = columns
-                for attempt in retry_context(self.context):
-                    with attempt:
-                        content = handle_error(
-                            self.context.http_client.get(
-                                URL_PATH,
-                                headers={"Accept": APACHE_ARROW_FILE_MIME_TYPE},
-                                params=params,
-                            )
-                        ).read()
+                content = retry_call(
+                    lambda: handle_error(
+                        self.context.http_client.get(
+                            URL_PATH,
+                            headers={"Accept": APACHE_ARROW_FILE_MIME_TYPE},
+                            params=params,
+                        )
+                    ).read(),
+                    self.context,
+                )
         if (ps := self.context.progress_state) is not None:
             ps.advance()
         return deserialize_arrow(content)
@@ -208,14 +211,14 @@ class _DaskDataFrameClient(BaseClient):
             self_link = self.item["links"]["self"]
             if self_link.endswith("/"):
                 self_link = self_link[:-1]
-            for attempt in retry_context():
-                with attempt:
-                    content = handle_error(
-                        self.context.http_client.get(
-                            self_link + f"/{column}",
-                            headers={"Accept": MSGPACK_MIME_TYPE},
-                        )
-                    ).json()
+            content = retry_call(
+                lambda: handle_error(
+                    self.context.http_client.get(
+                        self_link + f"/{column}",
+                        headers={"Accept": MSGPACK_MIME_TYPE},
+                    )
+                ).json(),
+            )
         except ClientError as err:
             if err.response.status_code == httpx.codes.NOT_FOUND:
                 raise KeyError(column)

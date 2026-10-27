@@ -1060,16 +1060,12 @@ def build_app(
         async def capture_metrics_prometheus(
             request: Request, call_next: RequestResponseEndpoint
         ):
+            # Ephemeral response solely for 'capture_request_metrics', used
+            # if call_next raises; the exception still propagates so the server
+            # can send an appropriate response to the client.
+            response = Response(status_code=HTTP_500_INTERNAL_SERVER_ERROR)
             try:
                 response = await call_next(request)
-            except Exception:
-                # Make an ephemeral response solely for 'capture_request_metrics'.
-                # It will only be used in the 'finally' clean-up block.
-                only_for_metrics = Response(status_code=HTTP_500_INTERNAL_SERVER_ERROR)
-                response = only_for_metrics
-                # Now re-raise the exception so that the server can generate and
-                # send an appropriate response to the client.
-                raise
             finally:
                 metrics.capture_request_metrics(request, response)
 

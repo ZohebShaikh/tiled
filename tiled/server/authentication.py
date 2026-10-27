@@ -764,6 +764,8 @@ async def create_pending_session(db: AsyncSession):
             # possibility of a collission. Retry.
             continue
         break
+    else:
+        raise RuntimeError("Could not generate a unique user code.")
     formatted_user_code = f"{user_code[:4]}-{user_code[4:]}"
     return {
         "user_code": formatted_user_code,

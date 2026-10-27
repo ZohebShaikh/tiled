@@ -38,7 +38,7 @@ if ZARR_LIB_V2:
     from zarr.storage import init_array as create_array
 else:
     from zarr import create_array
-    from zarr.storage import LocalStore, ObjectStore
+    from zarr.storage import LocalStore
 
 
 INLINED_DEPTH = int(os.getenv("TILED_HDF5_INLINED_CONTENTS_MAX_DEPTH", "7"))
@@ -95,6 +95,8 @@ class ZarrArrayAdapter(Adapter[ArrayStructure]):
         if ZARR_LIB_V2:
             zarr_store = LocalStore(str(path_from_uri(data_uri)))
         else:
+            from zarr.storage import ObjectStore
+
             zarr_store = ObjectStore(store=storage.get_obstore_location(data_uri))
 
         create_array(zarr_store, shape=shape, chunks=zarr_chunks, dtype=data_type)
@@ -305,6 +307,8 @@ class ZarrAdapter:
             # This is an object-store-based Zarr storage
             storage = cast(ObjectStorage, get_storage(uri))
             _, _, prefix = storage.parse_blob_uri(uri)
+            from zarr.storage import ObjectStore
+
             zarr_store = ObjectStore(store=storage.get_obstore_location())
             # zarr_obj = zarr.open(store=zarr_store)
 

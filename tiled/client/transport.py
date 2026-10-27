@@ -117,6 +117,7 @@ class Transport(httpx.BaseTransport):
             self.cache.close()
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
+        cached_response = None
         # check if request is cacheable
         if (self.cache is not None) and self.controller.is_request_cacheable(request):
             if __debug__:
@@ -160,7 +161,10 @@ class Transport(httpx.BaseTransport):
             # But, below _collect_ the response with the content in it.
 
         if self.cache is not None:
-            if response.status_code == httpx.codes.NOT_MODIFIED:
+            if (
+                response.status_code == httpx.codes.NOT_MODIFIED
+                and cached_response is not None
+            ):
                 if __debug__:
                     logger.debug(
                         "Server validated as fresh cached entry for: %s", request

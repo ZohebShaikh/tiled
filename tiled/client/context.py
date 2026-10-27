@@ -28,6 +28,7 @@ from .utils import (
     StandaloneRetryIndicator,
     handle_error,
     polling_retry_context,
+    retry_call,
     retry_context,
 )
 
@@ -329,17 +330,18 @@ class Context:
         # (2) Let the server set the CSRF cookie.
         # https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html#double-submit-cookie
         server_info = None
-        for attempt in retry_context(self):
-            with attempt:
-                server_info = handle_error(
-                    self.http_client.get(
-                        self.api_uri,
-                        headers={
-                            "Accept": MSGPACK_MIME_TYPE,
-                            "Cache-Control": "no-cache, no-store",
-                        },
-                    )
-                ).json()
+        server_info = retry_call(
+            lambda: handle_error(
+                self.http_client.get(
+                    self.api_uri,
+                    headers={
+                        "Accept": MSGPACK_MIME_TYPE,
+                        "Cache-Control": "no-cache, no-store",
+                    },
+                )
+            ).json(),
+            self,
+        )
         assert server_info is not None  # retry_context() always raises or succeeds
         self.server_info: About = TypeAdapter(About).validate_python(server_info)
         self.api_key = api_key  # property setter sets Authorization header
@@ -732,11 +734,9 @@ class Context:
                 httpx.Timeout(**DEFAULT_TIMEOUT_PARAMS) if timeout is None else timeout
             )
             response_from_http = None
-            for attempt in retry_context():
-                with attempt:
-                    response_from_http = httpx.get(
-                        uri, timeout=probe_timeout, trust_env=trust_env
-                    )
+            response_from_http = retry_call(
+                lambda: httpx.get(uri, timeout=probe_timeout, trust_env=trust_env),
+            )
             assert (
                 response_from_http is not None
             )  # retry_context() always raises or succeeds

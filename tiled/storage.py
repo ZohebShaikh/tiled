@@ -295,6 +295,8 @@ class ObjectStorage(Storage):
             kwargs = {"url": self.uri.split(self.bucket, -1)[0], "bucket": self.bucket}
             if self.password is not None:
                 kwargs["service_account_key"] = self.password
+        else:
+            raise ValueError(f"Unknown object storage provider {self.provider!r}")
 
         _class = {"s3": S3Store, "azure": AzureStore, "google": GCSStore}[self.provider]
         prefix = uri[len(self.uri) :].lstrip("/") if uri else None

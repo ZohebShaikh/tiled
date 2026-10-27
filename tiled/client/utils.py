@@ -8,7 +8,7 @@ from collections.abc import Hashable
 from dataclasses import asdict
 from pathlib import Path
 from threading import Lock
-from typing import Optional, Union
+from typing import Callable, Optional, TypeVar, Union
 from urllib.parse import parse_qs, urlparse
 from weakref import WeakValueDictionary
 
@@ -291,6 +291,23 @@ def retry_context(context=None, *, on=None):
             standalone.reset()
         elif context is not None:
             context.signal_retry_resolved()
+
+
+T = TypeVar("T")
+
+
+def retry_call(fn: Callable[[], T], context=None, *, on=None) -> T:
+    """Call `fn` under `retry_context` and return its result.
+
+    Prefer this over a bare `for attempt in retry_context(): with attempt:`
+    loop when the result is needed afterwards: the loop form cannot prove to
+    a type checker that the assignment inside it happened.
+    """
+    for attempt in retry_context(context, on=on):
+        with attempt:
+            return fn()
+    # stamina re-raises the last error once attempts are exhausted.
+    raise AssertionError("unreachable")
 
 
 def should_poll_for_tokens(exception: Exception) -> bool:
