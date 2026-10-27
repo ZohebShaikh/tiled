@@ -233,7 +233,7 @@ def test_psql_data_uri_query_parameters(
 
 
 @pytest.mark.parametrize(
-    "adapter",
+    "adapter_fixture_name",
     [
         ("adapter_sqlite_one_partition"),
         ("adapter_duckdb_one_partition"),
@@ -241,10 +241,10 @@ def test_psql_data_uri_query_parameters(
     ],
 )
 def test_write_read_one_batch_one_part(
-    adapter: SQLAdapter, request: pytest.FixtureRequest
+    adapter_fixture_name: str, request: pytest.FixtureRequest
 ) -> None:
     # get adapter from fixture
-    adapter = request.getfixturevalue(adapter)
+    adapter = request.getfixturevalue(adapter_fixture_name)
 
     # test appending and reading a table as a whole
     test_table = pa.Table.from_arrays(data0, names)
@@ -265,7 +265,7 @@ def test_write_read_one_batch_one_part(
 
 
 @pytest.mark.parametrize(
-    "adapter",
+    "adapter_fixture_name",
     [
         ("adapter_sqlite_one_partition"),
         ("adapter_duckdb_one_partition"),
@@ -273,10 +273,10 @@ def test_write_read_one_batch_one_part(
     ],
 )
 def test_write_read_list_batch_one_part(
-    adapter: SQLAdapter, request: pytest.FixtureRequest
+    adapter_fixture_name: str, request: pytest.FixtureRequest
 ) -> None:
     # get adapter from fixture
-    adapter = request.getfixturevalue(adapter)
+    adapter = request.getfixturevalue(adapter_fixture_name)
 
     test_table = pa.Table.from_batches([batch0, batch1, batch2])
     # test appending a list of batches to a table and read as a whole
@@ -322,7 +322,7 @@ def assert_same_rows(table1: pa.Table, table2: pa.Table) -> None:
 
 
 @pytest.mark.parametrize(
-    "adapter",
+    "adapter_fixture_name",
     [
         ("adapter_sqlite_many_partitions"),
         ("adapter_duckdb_many_partitions"),
@@ -330,10 +330,10 @@ def assert_same_rows(table1: pa.Table, table2: pa.Table) -> None:
     ],
 )
 def test_append_single_partition(
-    adapter: SQLAdapter, request: pytest.FixtureRequest
+    adapter_fixture_name: str, request: pytest.FixtureRequest
 ) -> None:
     # get adapter from fixture
-    adapter = request.getfixturevalue(adapter)
+    adapter = request.getfixturevalue(adapter_fixture_name)
 
     # test writing an entire pyarrow table to a single partition
     table = pa.Table.from_batches([batch0, batch1, batch2])
@@ -350,17 +350,17 @@ def test_append_single_partition(
 
 
 @pytest.mark.parametrize(
-    "adapter",
+    "adapter_fixture_name",
     [
         ("adapter_sqlite_many_partitions"),
         ("adapter_psql_many_partitions"),
     ],
 )
 def test_write_read_one_batch_many_part(
-    adapter: SQLAdapter, request: pytest.FixtureRequest
+    adapter_fixture_name: str, request: pytest.FixtureRequest
 ) -> None:
     # get adapter from fixture
-    adapter = request.getfixturevalue(adapter)
+    adapter = request.getfixturevalue(adapter_fixture_name)
 
     # test writing to many partitions and reading it whole
     adapter.append_partition(0, batch0)

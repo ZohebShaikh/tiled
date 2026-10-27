@@ -70,8 +70,7 @@ def identity_provider_input(
             "Choose an authentication provider (or press Enter to cancel): "
         )
         if not raw_choice:
-            print("No authentication provider chosen. Failed.")
-            break
+            raise PasswordRejected("No authentication provider chosen. Failed.")
         try:
             choice = int(raw_choice)
         except TypeError:
@@ -329,6 +328,7 @@ class Context:
         # (1) Get the server_info.
         # (2) Let the server set the CSRF cookie.
         # https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html#double-submit-cookie
+        server_info = None
         for attempt in retry_context(self):
             with attempt:
                 server_info = handle_error(
@@ -340,6 +340,7 @@ class Context:
                         },
                     )
                 ).json()
+        assert server_info is not None  # retry_context() always raises or succeeds
         self.server_info: About = TypeAdapter(About).validate_python(server_info)
         self.api_key = api_key  # property setter sets Authorization header
         self.admin = Admin(self)  # accessor for admin-related requests
@@ -730,11 +731,15 @@ class Context:
             probe_timeout = (
                 httpx.Timeout(**DEFAULT_TIMEOUT_PARAMS) if timeout is None else timeout
             )
+            response_from_http = None
             for attempt in retry_context():
                 with attempt:
                     response_from_http = httpx.get(
                         uri, timeout=probe_timeout, trust_env=trust_env
                     )
+            assert (
+                response_from_http is not None
+            )  # retry_context() always raises or succeeds
             if response_from_http.is_redirect:
                 redirect_uri = httpx.URL(response_from_http.headers["location"])
                 if redirect_uri.scheme == "https" and redirect_uri.host == uri.host:
@@ -1174,9 +1179,10 @@ class Context:
                         "Session cannot be refreshed. Log in again."
                     )
                 handle_error(token_response)
-        tokens = token_response.json()
-        self.http_client.auth.sync_tokens(tokens)
-        return tokens
+                tokens = token_response.json()
+                self.http_client.auth.sync_tokens(tokens)
+                return tokens
+        raise AssertionError("unreachable")  # retry_context() always raises or returns
 
     def whoami(self):
         "Return information about the currently-authenticated user or service."
@@ -1200,6 +1206,8 @@ class Context:
         """
         if self.http_client.auth is None:
             return
+        if not isinstance(self.http_client.auth, TiledAuth):
+            raise RuntimeError("No authentication has been set up. Cannot log out.")
 
         # Revoke the current session.
         refresh_token = self.http_client.auth.sync_get_token("refresh_token")
@@ -1383,16 +1391,20 @@ class CannotPrompt(Exception):
 def _can_prompt():
     "Infer whether the user can be prompted for a password or user code."
 
-    if (not sys.__stdin__.closed) and sys.__stdin__.isatty():
+    if (
+        sys.__stdin__ is not None
+        and (not sys.__stdin__.closed)
+        and sys.__stdin__.isatty()
+    ):
         return True
     # In IPython (TerminalInteractiveShell) the above is true, but in
     # Jupyter (ZMQInteractiveShell) it is False.
     # Jupyter own mechanism for giving a prompt, so we always return
     # True if we detect IPython/Jupyter.
     if "IPython" in sys.modules:
-        import IPython
+        from IPython.core.getipython import get_ipython
 
-        if IPython.get_ipython() is not None:
+        if get_ipython() is not None:
             return True
     return False
 
@@ -1407,7 +1419,8 @@ def password_grant(http_client, auth_endpoint, provider, username, password):
         with attempt:
             token_response = http_client.post(auth_endpoint, data=form_data, auth=None)
             handle_error(token_response)
-    return token_response.json()
+            return token_response.json()
+    raise AssertionError("unreachable")  # retry_context() always raises or returns
 
 
 def device_code_grant(
@@ -1417,6 +1430,9 @@ def device_code_grant(
     token_endpoint: Optional[str],
     scopes: str = "openid offline_access",
 ):
+    oauth2_spec = None
+    verification = None
+    verification_uri = None
     for attempt in retry_context():
         with attempt:
             if client_id and token_endpoint:
@@ -1454,6 +1470,10 @@ def device_code_grant(
                 verification = verification_response.json()
                 token_endpoint = verification["verification_uri"]
                 verification_uri = verification["authorization_uri"]
+    # retry_context() always raises or leaves these bound on success
+    assert oauth2_spec is not None
+    assert verification is not None
+    assert verification_uri is not None
     print(
         f"""
 You have {int(verification["expires_in"]) // 60} minutes to visit this URL
@@ -1472,6 +1492,7 @@ and enter the code:
     webbrowser.open(verification_uri)
     deadline = float(verification["expires_in"]) + time.monotonic()
     print("Waiting...", end="", flush=True)
+    access_response = None
     while True:
         time.sleep(float(verification["interval"]))
         if time.monotonic() > deadline:
@@ -1522,5 +1543,6 @@ and enter the code:
         # We broke out of the for loop due to authorization_pending.
         # Continue the outer while loop to poll again.
         continue
+    assert access_response is not None  # loop only exits via break after a response
     tokens = access_response.json()
     return tokens

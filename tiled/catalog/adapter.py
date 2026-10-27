@@ -115,7 +115,14 @@ from ..storage import (
     register_storage,
     release_storage,
 )
+from ..structures.array import ArrayStructure
+from ..structures.awkward import AwkwardStructure
+from ..structures.bytes import BytesStructure
 from ..structures.core import Spec, StructureFamily
+from ..structures.ragged import RaggedStructure
+from ..structures.root import Structure
+from ..structures.sparse import SparseStructure
+from ..structures.table import TableStructure
 from ..utils import (
     UNCHANGED,
     Conflicts,
@@ -584,11 +591,15 @@ class CatalogNodeAdapter:
             return None  # no match
         return Asset.from_orm(asset)
 
-    def structure(self):
+    def structure(self) -> Optional[Structure]:
         data_sources = self.node.data_sources or []
         if data_sources:
             assert len(data_sources) == 1  # more not yet implemented
-            return DataSource.from_orm(data_sources[0], include_assets=False).structure
+            structure = DataSource.from_orm(
+                data_sources[0], include_assets=False
+            ).structure
+            assert structure is None or isinstance(structure, Structure)
+            return structure
         return None
 
     def apply_conditions(self, statement):
@@ -1826,6 +1837,8 @@ class CatalogNodeAdapter:
             values["metadata_"] = metadata
         if specs is not None:
             values["specs"] = specs
+        current = None
+        next_revision_number = None
         async with self.context.session() as db:
             if not drop_revision:
                 current = (
@@ -1885,6 +1898,7 @@ class CatalogNodeAdapter:
                     "metadata": metadata,
                 }
                 if not drop_revision:
+                    assert next_revision_number is not None
                     metadata["revision_number"] = next_revision_number
                 await self.context.streaming_cache.set(
                     self.node.parent, sequence, metadata
@@ -1897,7 +1911,7 @@ class CatalogNodeAdapter:
                 # drop_revision=False) or to the cached node attribute.
                 if metadata is not None:
                     effective_metadata = metadata
-                elif not drop_revision:
+                elif current is not None:
                     effective_metadata = current.metadata_ or {}
                 else:
                     effective_metadata = self.node.metadata_ or {}
@@ -1905,7 +1919,8 @@ class CatalogNodeAdapter:
                 effective_specs = (
                     specs
                     if specs is not None
-                    else (current.specs if not drop_revision else self.node.specs) or []
+                    else (current.specs if current is not None else self.node.specs)
+                    or []
                 )
                 ev = ContainerChildMetadataUpdatedEvent(
                     timestamp=datetime.now(tz=timezone.utc),
@@ -1934,6 +1949,11 @@ class CatalogNodeAdapter:
                 # directly on this node are included in the ancestor walk.
                 node_id=self.node.id,
             )
+
+    def make_ws_schema(self):
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support streaming over websockets."
+        )
 
     def make_ws_handler(self, websocket, formatter, uri):
         schema = self.make_ws_schema()
@@ -2229,6 +2249,18 @@ class CatalogArrayAdapter(CatalogNodeAdapter):
                     return True
         return False if found else None
 
+    # Subclasses (CatalogRaggedAdapter, CatalogSparseAdapter) reuse this
+    # class's read/write implementations but represent different structure
+    # families, so this return type covers what any of them can produce.
+    def structure(
+        self,
+    ) -> Optional[Union[ArrayStructure, RaggedStructure, SparseStructure]]:
+        structure = super().structure()
+        assert structure is None or isinstance(
+            structure, (ArrayStructure, RaggedStructure, SparseStructure)
+        )
+        return structure
+
     async def read(self, *args, **kwargs):
         if not self.node.data_sources:
             fields = kwargs.get("fields")
@@ -2283,10 +2315,13 @@ class CatalogArrayAdapter(CatalogNodeAdapter):
         )
 
     def make_ws_schema(self):
+        structure = self.structure()
+        assert structure is not None
+        assert structure.data_type is not None
         return {
             "type": "array-schema",
             "version": 1,
-            "data_type": dataclasses.asdict(self.structure().data_type),
+            "data_type": dataclasses.asdict(structure.data_type),
         }
 
     async def write(self, media_type, deserializer, entry, body, persist=True):
@@ -2366,6 +2401,11 @@ class CatalogArrayAdapter(CatalogNodeAdapter):
 
 
 class CatalogAwkwardAdapter(CatalogNodeAdapter):
+    def structure(self) -> Optional[AwkwardStructure]:
+        structure = super().structure()
+        assert structure is None or isinstance(structure, AwkwardStructure)
+        return structure
+
     async def read(self, *args, **kwargs):
         return await ensure_awaitable((await self.get_adapter()).read, *args, **kwargs)
 
@@ -2383,15 +2423,25 @@ class CatalogBytesAdapter(CatalogNodeAdapter):
     # structure-family endpoint, so this adapter inherits CatalogNodeAdapter
     # unchanged. The class exists to anchor the family in STRUCTURES so
     # registration produces an instance of the right type.
-    pass
+    def structure(self) -> Optional[BytesStructure]:
+        structure = super().structure()
+        assert structure is None or isinstance(structure, BytesStructure)
+        return structure
 
 
 class CatalogRaggedAdapter(CatalogArrayAdapter):
+    def structure(self) -> Optional[RaggedStructure]:
+        structure = super().structure()
+        assert structure is None or isinstance(structure, RaggedStructure)
+        return structure
+
     def make_ws_schema(self):
+        structure = self.structure()
+        assert structure is not None
         return {
             "type": "ragged-schema",
             "version": 1,
-            "data_type": dataclasses.asdict(self.structure().data_type),
+            "data_type": dataclasses.asdict(structure.data_type),
         }
 
     async def _stream(self, media_type, entry, body, shape, block=None, offset=None):
@@ -2471,15 +2521,25 @@ class CatalogRaggedAdapter(CatalogArrayAdapter):
 
 
 class CatalogSparseAdapter(CatalogArrayAdapter):
-    pass
+    def structure(self) -> Optional[SparseStructure]:
+        structure = super().structure()
+        assert structure is None or isinstance(structure, SparseStructure)
+        return structure
 
 
 class CatalogTableAdapter(CatalogNodeAdapter):
+    def structure(self) -> Optional[TableStructure]:
+        structure = super().structure()
+        assert structure is None or isinstance(structure, TableStructure)
+        return structure
+
     def make_ws_schema(self):
+        structure = self.structure()
+        assert structure is not None
         return {
             "type": "table-schema",
             "version": 1,
-            "arrow_schema": self.structure().arrow_schema,
+            "arrow_schema": structure.arrow_schema,
         }
 
     async def _stream(self, media_type, entry, body, partition, append):
@@ -2817,7 +2877,7 @@ def in_or_not_in_postgresql(query, tree, method):
                     for item in query.value
                 )
             )
-    elif method == "not_in":
+    else:  # method == "not_in"
         if len(query.value) == 0:
             condition = true()
         else:
