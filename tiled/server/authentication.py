@@ -1264,7 +1264,9 @@ async def generate_apikey(db: AsyncSession, principal, apikey_params, request):
     # db.refresh(new_key)
     return json_or_msgpack(
         request,
-        schemas.APIKeyWithSecret.from_orm(new_key, secret=secret.hex()).model_dump(),
+        schemas.APIKeyWithSecret.from_orm_with_secret(
+            new_key, secret=secret.hex()
+        ).model_dump(),
     )
 
 

@@ -5,7 +5,6 @@ from typing import Optional
 
 import numcodecs
 import orjson
-import pydantic_settings
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import Response
 from starlette.status import (
@@ -70,7 +69,7 @@ def get_zarr_router_v2() -> APIRouter:
         principal: Optional[Principal] = Depends(get_current_principal),
         authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
     ):
         "Return entry.metadata as Zarr attributes metadata (.zattrs)"
@@ -106,7 +105,7 @@ def get_zarr_router_v2() -> APIRouter:
         principal: Optional[Principal] = Depends(get_current_principal),
         authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
     ):
         await get_entry(
@@ -134,7 +133,7 @@ def get_zarr_router_v2() -> APIRouter:
         principal: Optional[Principal] = Depends(get_current_principal),
         authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
     ):
         entry = await get_entry(
@@ -187,7 +186,7 @@ def get_zarr_router_v2() -> APIRouter:
         principal: Optional[Principal] = Depends(get_current_principal),
         authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
     ):
         # If a zarr block is requested, e.g. http://localhost:8000/zarr/v2/array/0.1.2.3,
@@ -320,7 +319,7 @@ def get_zarr_router_v3() -> APIRouter:
         principal: Optional[Principal] = Depends(get_current_principal),
         authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
     ):
         from zarr.core.dtype import parse_data_type
@@ -418,7 +417,7 @@ def get_zarr_router_v3() -> APIRouter:
         principal: Optional[Principal] = Depends(get_current_principal),
         authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
     ):
         entry = await get_entry(
@@ -517,7 +516,7 @@ def get_zarr_router_v3() -> APIRouter:
         principal: Optional[Principal] = Depends(get_current_principal),
         authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
     ):
         entry = await get_entry(

@@ -722,6 +722,13 @@ def _patch_naive_datetimes(obj):
     return patched_obj
 
 
+def _packb(obj: Any, **kwargs: Any) -> bytes:
+    packed = msgpack.packb(obj, **kwargs)
+    # packb uses an auto-resetting Packer, which always returns the bytes.
+    assert packed is not None
+    return packed
+
+
 class MsgpackResponse(Response):
     media_type = "application/x-msgpack"
 
@@ -732,9 +739,7 @@ class MsgpackResponse(Response):
     def render(self, content: Any, _reentered=False) -> bytes:
         try:
             with record_timing(self.__metrics, "pack"):
-                return msgpack.packb(
-                    content, default=_fallback_msgpack_encoder, datetime=True
-                )
+                return _packb(content, default=_fallback_msgpack_encoder, datetime=True)
         except (ValueError, TypeError) as err:
             # msgpack tries to handle all datetimes, but if it
             # received a naive one (tzinfo=None) then it fails.
@@ -811,8 +816,7 @@ def get_websocket_envelope_formatter(
         ):
             if payload_bytes is not None:
                 metadata["payload"] = payload_bytes
-            data = msgpack.packb(metadata)
-            await websocket.send_bytes(data)
+            await websocket.send_bytes(_packb(metadata))
 
         return stream_msgpack
 

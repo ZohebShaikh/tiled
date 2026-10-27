@@ -11,7 +11,6 @@ from typing import Awaitable, Callable, List, Literal, Mapping, Optional, TypeVa
 import anyio
 import anyio.to_thread
 import packaging.version
-import pydantic_settings
 from fastapi import (
     APIRouter,
     Body,
@@ -937,7 +936,7 @@ def get_router(
         request: Request,
         path: str,
         principal: Optional[schemas.Principal] = Depends(get_current_principal),
-        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
         authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),

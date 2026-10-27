@@ -18,7 +18,7 @@ class AccessFormatter(_UvicornAccessFormatter):
             status_code,
         ) = recordcopy.args  # type: ignore[misc]
         # Decode percent-encoded characters for readability
-        full_path = urllib.parse.unquote(full_path)
+        full_path = urllib.parse.unquote(str(full_path))
         recordcopy.args = (client_addr, method, full_path, http_version, status_code)
         return super().formatMessage(recordcopy)
 

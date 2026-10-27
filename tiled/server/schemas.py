@@ -79,7 +79,7 @@ class PaginationLinks(pydantic.BaseModel):
     last: str
 
 
-class EntryFields(str, enum.Enum):
+class EntryFields(enum.Enum):
     metadata = "metadata"
     structure_family = "structure_family"
     structure = "structure"
@@ -132,6 +132,7 @@ class Asset(pydantic.BaseModel):
 
         assert isinstance(obj, tiled.catalog.orm.Asset)
         orm = obj
+        assert orm.data_uri is not None  # Assets are always created with a URI.
         return cls(
             data_uri=orm.data_uri,
             is_directory=orm.is_directory,
@@ -163,6 +164,7 @@ class Revision(pydantic.BaseModel):
 
         assert isinstance(obj, tiled.catalog.orm.Revision)
         orm = obj
+        assert orm.time_updated is not None  # Set by a server default.
         # Trailing underscore in 'metadata_' avoids collision with
         # SQLAlchemy reserved word 'metadata'.
         return cls(
@@ -209,8 +211,8 @@ class DataSource(pydantic.BaseModel, Generic[StructureT]):
             structure_family=orm.structure_family,
             structure=structure,
             mimetype=orm.mimetype,
-            parameters=orm.parameters,
-            properties=orm.properties,
+            parameters=orm.parameters or {},
+            properties=orm.properties or {},
             assets=assets,
             management=orm.management,
         )
@@ -400,7 +402,7 @@ class APIKeyWithSecret(APIKey):
     secret: str  # hex-encoded bytes
 
     @classmethod
-    def from_orm(cls, obj: Any, secret: str) -> APIKeyWithSecret:
+    def from_orm_with_secret(cls, obj: Any, secret: str) -> APIKeyWithSecret:
         import tiled.authn_database.orm
 
         assert isinstance(obj, tiled.authn_database.orm.APIKey)
@@ -596,22 +598,17 @@ class PutMetadataRequest(pydantic.BaseModel):
         return v
 
 
-def JSONPatchType(dtype=Any):
-    # we use functional syntax with TypedDict here since "from" is a keyword
-    return TypedDict(
-        "JSONPatchType",
-        {
-            "op": str,
-            "path": str,
-            "from": str,
-            "value": dtype,
-        },
-        total=False,
-    )
-
-
-JSONPatchSpec = JSONPatchType(Spec)
-JSONPatchAny = JSONPatchType(Any)
+# We use functional syntax with TypedDict here since "from" is a keyword.
+JSONPatchSpec = TypedDict(
+    "JSONPatchSpec",
+    {"op": str, "path": str, "from": str, "value": Spec},
+    total=False,
+)
+JSONPatchAny = TypedDict(
+    "JSONPatchAny",
+    {"op": str, "path": str, "from": str, "value": Any},
+    total=False,
+)
 
 
 class HyphenizedBaseModel(pydantic.BaseModel):
