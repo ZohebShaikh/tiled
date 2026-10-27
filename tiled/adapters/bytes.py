@@ -44,7 +44,7 @@ class BytesAdapter(Adapter[BytesStructure]):
         data_source: DataSource[BytesStructure],
         node: Node,
         /,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> "BytesAdapter":
         return cls(
             structure=data_source.structure,

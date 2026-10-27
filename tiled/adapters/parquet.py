@@ -48,7 +48,7 @@ class ParquetDatasetAdapter(Adapter[TableStructure]):
         data_source: DataSource[TableStructure],
         node: Node,
         /,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> "ParquetDatasetAdapter":
         return init_adapter_from_catalog(cls, data_source, node, **kwargs)
 
@@ -56,7 +56,7 @@ class ParquetDatasetAdapter(Adapter[TableStructure]):
     def from_uris(
         cls,
         *data_uris: str,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> "ParquetDatasetAdapter":
         # Each URI is one partition of a single table; infer the structure from
         # all of them together.

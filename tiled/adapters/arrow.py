@@ -51,7 +51,7 @@ class ArrowAdapter(Adapter[TableStructure]):
         data_source: DataSource[TableStructure],
         node: Node,
         /,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> "ArrowAdapter":
         return init_adapter_from_catalog(cls, data_source, node, **kwargs)
 

@@ -68,7 +68,7 @@ def init_adapter_from_catalog(
     data_source: DataSource[S],
     node: Any,  # tiled.catalog.orm.Node ?
     /,
-    **kwargs: Optional[Any],
+    **kwargs: Any,
 ) -> A:
     # TODO: Sort out typing for Adapters
     """Factory function to produce Adapter instances given their parameters encoded in data sources"""

@@ -1,9 +1,10 @@
 import copy
-from collections.abc import Set
+from collections.abc import Hashable, Set
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 from urllib.parse import quote_plus
 
+import dask.array
 import dask.dataframe
 import numpy
 import pandas
@@ -35,7 +36,7 @@ class CSVAdapter(Adapter[TableStructure]):
         *,
         metadata: Optional[JSON] = None,
         specs: Optional[List[Spec]] = None,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> None:
         """Adapter for partitioned tabular data stored as a sequence of text (csv) files
 
@@ -67,7 +68,7 @@ class CSVAdapter(Adapter[TableStructure]):
         data_source: DataSource[TableStructure],
         node: Node,
         /,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> "CSVAdapter":
         return init_adapter_from_catalog(cls, data_source, node, **kwargs)
 
@@ -75,7 +76,7 @@ class CSVAdapter(Adapter[TableStructure]):
     def from_uris(
         cls,
         *data_uris: str,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> "CSVAdapter":
         return cls(data_uris, **kwargs)
 
@@ -200,7 +201,7 @@ class CSVAdapter(Adapter[TableStructure]):
         # (pandas does not support the `assume_missing` parameter).
         if kwargs.pop("assume_missing", False):
             schema = self.structure().arrow_schema_decoded
-            dtypes = {
+            dtypes: Dict[Hashable, Any] = {
                 indx: field.type.to_pandas_dtype() for indx, field in enumerate(schema)
             }
             df = pandas.read_csv(self._file_paths[indx], dtype=dtypes, **kwargs)
@@ -217,7 +218,7 @@ class CSVAdapter(Adapter[TableStructure]):
     def get(self, key: str) -> Union[ArrayAdapter, None]:
         if key not in self.structure().columns:
             return None
-        return ArrayAdapter.from_array(self.read([key])[key].values)
+        return ArrayAdapter.from_array(self.read([key])[key].to_numpy())
 
     def generate_data_sources(
         self,
@@ -248,7 +249,7 @@ class CSVAdapter(Adapter[TableStructure]):
 
     def __getitem__(self, key: str) -> ArrayAdapter:
         # Must compute to determine shape.
-        return ArrayAdapter.from_array(self.read([key])[key].values)
+        return ArrayAdapter.from_array(self.read([key])[key].to_numpy())
 
     def items(self) -> Iterator[Tuple[str, ArrayAdapter]]:
         """Iterator over table columns
@@ -258,7 +259,7 @@ class CSVAdapter(Adapter[TableStructure]):
         Tuples of column names and corresponding ArrayAdapters
         """
         yield from (
-            (key, ArrayAdapter.from_array(self.read([key])[key].values))
+            (key, ArrayAdapter.from_array(self.read([key])[key].to_numpy()))
             for key in self._structure.columns
         )
 
@@ -272,7 +273,7 @@ class CSVArrayAdapter(ArrayAdapter):
         data_source: DataSource[ArrayStructure],
         node: Node,
         /,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> "CSVArrayAdapter":
         """Adapter for partitioned array data stored as a sequence of csv files
 
@@ -331,7 +332,7 @@ class CSVArrayAdapter(ArrayAdapter):
     def from_uris(
         cls,
         *data_uris: str,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> "CSVArrayAdapter":
         tbl_adapter = CSVAdapter.from_uris(*data_uris, **{"header": None, **kwargs})
         tbl_structure = tbl_adapter.structure()

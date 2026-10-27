@@ -294,7 +294,7 @@ class ZarrAdapter:
         data_source: DataSource[Union[ArrayStructure, None]],
         node: Node,
         /,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> Union[ZarrGroupAdapter, ZarrArrayAdapter]:
         is_container_type = node.structure_family == StructureFamily.container
         uri = data_source.assets[0].data_uri
@@ -338,7 +338,7 @@ class ZarrAdapter:
 
     @classmethod
     def from_uris(
-        cls, data_uri: str, **kwargs: Optional[Any]
+        cls, data_uri: str, **kwargs: Any
     ) -> Union[ZarrArrayAdapter, ZarrGroupAdapter]:
         zarr_obj = zarr.open(path_from_uri(data_uri))  # Group or Array
         if isinstance(zarr_obj, zarr.Group):

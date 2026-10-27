@@ -342,7 +342,7 @@ class SQLAdapter(Adapter[TableStructure]):
         data_source: DataSource[TableStructure],
         node: Node,
         /,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> "SQLAdapter":
         return cls(
             data_source.assets[0].data_uri,

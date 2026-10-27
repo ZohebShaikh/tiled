@@ -21,5 +21,9 @@ class InternalAuthenticator(ABC):
 
 
 class ExternalAuthenticator(ABC):
+    # Where to send the browser after authenticating, if anywhere.
+    redirect_on_success: Optional[str] = None
+    redirect_on_failure: Optional[str] = None
+
     async def authenticate(self, request: Request) -> Optional[UserSessionState]:
         raise NotImplementedError

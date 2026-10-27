@@ -8,6 +8,7 @@ else:
     from types import EllipsisType
 
 from typing import (
+    AbstractSet,
     Annotated,
     Any,
     Callable,
@@ -16,7 +17,6 @@ from typing import (
     List,
     Mapping,
     Sequence,
-    Set,
     Tuple,
     TypedDict,
     Union,
@@ -30,7 +30,7 @@ JSON_ITEM = Union[
 JSON = Mapping[str, JSON_ITEM]
 
 AccessTags = FrozenSet[str]
-Scopes = Set[str]
+Scopes = AbstractSet[str]
 Query = Any  # for now...
 Filters = List[Query]
 Chunks = Tuple[Tuple[int, ...], ...]

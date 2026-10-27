@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, List, Union
 
 import xarray
 
@@ -33,7 +33,7 @@ class NetCDFAdapter(TableAdapter):
         data_source: DataSource[None],
         node: Node,
         /,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> "NetCDFAdapter":
         filepath = path_from_uri(data_source.assets[0].data_uri)
 

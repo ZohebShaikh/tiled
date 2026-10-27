@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import delete
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -134,6 +135,8 @@ async def purge_expired(db: AsyncSession, cls) -> int:
         statement, execution_options={"synchronize_session": False}
     )
     await db.commit()
+    # DML statements always produce a CursorResult, which carries rowcount.
+    assert isinstance(result, CursorResult)
     return result.rowcount
 
 
@@ -201,7 +204,7 @@ async def lookup_valid_session(db: AsyncSession, session_id: str) -> Optional[Se
 
 
 async def lookup_valid_pending_session_by_device_code(
-    db: AsyncSession, device_code: str
+    db: AsyncSession, device_code: bytes
 ) -> Optional[PendingSession]:
     hashed_device_code = hashlib.sha256(device_code).digest()
     pending_session = (

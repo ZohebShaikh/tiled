@@ -57,7 +57,7 @@ class SparseBlocksParquetAdapter(Adapter[SparseStructure]):
         data_source: DataSource[SparseStructure],
         node: Node,
         /,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> "SparseBlocksParquetAdapter":
         return init_adapter_from_catalog(cls, data_source, node, **kwargs)
 

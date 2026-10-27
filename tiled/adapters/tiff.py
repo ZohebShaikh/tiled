@@ -63,12 +63,12 @@ class TiffAdapter(Adapter[ArrayStructure]):
         data_source: DataSource[ArrayStructure],
         node: Node,
         /,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> "TiffAdapter":
         return init_adapter_from_catalog(cls, data_source, node, **kwargs)
 
     @classmethod
-    def from_uris(cls, data_uri: str, **kwargs: Optional[Any]) -> "TiffAdapter":
+    def from_uris(cls, data_uri: str, **kwargs: Any) -> "TiffAdapter":
         return cls(data_uri)
 
     def metadata(self) -> JSON:

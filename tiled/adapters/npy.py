@@ -56,7 +56,7 @@ class NPYAdapter(Adapter[ArrayStructure]):
         data_source: DataSource[ArrayStructure],
         node: Node,
         /,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> "NPYAdapter":
         return init_adapter_from_catalog(cls, data_source, node, **kwargs)
 
@@ -64,7 +64,7 @@ class NPYAdapter(Adapter[ArrayStructure]):
     def from_uris(
         cls,
         data_uri: str,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> "NPYAdapter":
         filepath = path_from_uri(data_uri)
         cache_key = (numpy.load, filepath)

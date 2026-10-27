@@ -4,7 +4,7 @@ import uuid as uuid_module
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Annotated, Any, Callable, List, Optional, Sequence
+from typing import Annotated, Any, Callable, List, Optional
 
 import jwt
 from fastapi import (
@@ -29,13 +29,14 @@ from fastapi.security.api_key import APIKeyCookie, APIKeyHeader, APIKeyQuery
 from fastapi.security.utils import get_authorization_scheme_param
 from fastapi.templating import Jinja2Templates
 from jwt import ExpiredSignatureError, PyJWTError
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import func
 from starlette.datastructures import URL
+from starlette.requests import HTTPConnection
 from starlette.status import (
     HTTP_204_NO_CONTENT,
     HTTP_400_BAD_REQUEST,
@@ -45,7 +46,7 @@ from starlette.status import (
 )
 
 from tiled.access_control.scopes import NO_SCOPES, PUBLIC_SCOPES, SINGLE_USER_SCOPES
-from tiled.authenticators import ProxiedOIDCAuthenticator
+from tiled.authenticators import OIDCAuthenticator, ProxiedOIDCAuthenticator
 
 from ..access_control.protocols import normalize_access_tags
 from ..authn_database import orm
@@ -59,7 +60,7 @@ from ..authn_database.core import (
     lookup_valid_pending_session_by_user_code,
     lookup_valid_session,
 )
-from ..type_aliases import AccessTags
+from ..type_aliases import AccessTags, Scopes
 from ..utils import SHARE_TILED_PATH, SingleUserPrincipal
 from . import schemas
 from .connection_pool import (
@@ -119,7 +120,7 @@ class StrictAPIKeyHeader(APIKeyHeader):
     Additionally strips the scheme, as expected by current handling.
     """
 
-    async def __call__(self, request: Request) -> Optional[str]:
+    async def __call__(self, request: HTTPConnection) -> Optional[str]:
         api_key: Optional[str] = request.headers.get(self.model.name)
         scheme, param = get_authorization_scheme_param(api_key)
         if not scheme or scheme.lower() == "bearer":
@@ -365,7 +366,7 @@ async def move_api_key(request: Request, api_key: Optional[str] = Depends(get_ap
 
 async def get_scopes_from_api_key(
     api_key: str, settings: Settings, authenticated: bool, db: Optional[AsyncSession]
-) -> Sequence[str]:
+) -> Scopes:
     if not authenticated:
         # Tiled is in a "single user" mode with only one API key.
         return (
@@ -428,7 +429,7 @@ async def get_current_scopes(
     db_factory: Callable[
         [], AbstractAsyncContextManager[Optional[AsyncSession]]
     ] = Depends(get_database_session_factory),
-) -> set[str]:
+) -> Scopes:
     if api_key is not None:
         async with db_factory() as db:
             return await get_scopes_from_api_key(
@@ -466,7 +467,7 @@ async def get_current_scopes_websocket(
     db_factory: Callable[
         [], AbstractAsyncContextManager[Optional[AsyncSession]]
     ] = Depends(get_database_session_factory),
-) -> set[str]:
+) -> Scopes:
     if api_key is not None:
         async with db_factory() as db:
             return await get_scopes_from_api_key(
@@ -483,7 +484,7 @@ async def authenticate_websocket_first_message(
     message: dict,
     settings: Settings,
     db_factory: Callable,
-) -> tuple[bool, Optional[schemas.Principal], Optional[set], set]:
+) -> tuple[bool, Optional[schemas.Principal], Optional[AccessTags], Scopes]:
     """Authenticate a WebSocket connection from a 'first message' payload.
 
     Supports two credential types:
@@ -582,7 +583,7 @@ async def check_scopes(
 
 async def get_current_principal_from_api_key(
     api_key: str, authenticated: bool, db: Optional[AsyncSession], settings: Settings
-):
+) -> Optional[schemas.Principal]:
     if authenticated:
         db = require_authentication_database(db)
         # Tiled is in a multi-user configuration with authentication providers.
@@ -613,7 +614,12 @@ async def get_current_principal_from_api_key(
                 scopes.update(principal_scopes)
             api_key_orm.latest_activity = utcnow()
             await db.commit()
-            return principal
+            return schemas.Principal(
+                uuid=principal.uuid,
+                type=principal.type,
+                identities=[schemas.Identity.from_orm(i) for i in principal.identities],
+                roles=[schemas.Role.from_orm(r) for r in principal.roles],
+            )
         else:
             return None
     else:
@@ -666,16 +672,16 @@ async def get_current_principal_websocket(
             )
             provider = websocket.app.state.provider
             async with db_factory() as db:
-                session = await get_or_create_principal(
+                principal_orm = await get_or_create_principal(
                     require_authentication_database(db),
                     provider,
                     identity_id,
                 )
             principal = schemas.Principal(
-                uuid=session.principal.uuid,
+                uuid=principal_orm.uuid,
                 type=schemas.PrincipalType.user,
                 identities=[schemas.Identity(id=identity_id, provider=provider)],
-                access_token=access_token,
+                access_token=SecretStr(access_token) if access_token else None,
             )
         return principal
     else:
@@ -743,13 +749,13 @@ async def get_current_principal(
             )
             provider = request.app.state.provider
             async with db_factory() as db:
-                principal = await get_or_create_principal(
+                principal_orm = await get_or_create_principal(
                     require_authentication_database(db),
                     provider,
                     identity_id,
                 )
             principal = schemas.Principal(
-                uuid=principal.uuid,
+                uuid=principal_orm.uuid,
                 type=schemas.PrincipalType.user,
                 identities=[schemas.Identity(id=identity_id, provider=provider)],
                 access_token=access_token,
@@ -797,7 +803,7 @@ async def create_session(
     db: AsyncSession,
     identity_provider,
     id,
-    state: UserSessionState = None,
+    state: Optional[dict] = None,
 ):
     # Have we seen this Identity before?
     identity = (
@@ -826,7 +832,7 @@ async def create_session(
             .join(orm.Principal)
             .filter(orm.Principal.id == principal.id)
         )
-    ).scalar()
+    ).scalar_one()
     if session_count >= SESSION_LIMIT:
         raise HTTPException(
             400,
@@ -852,7 +858,7 @@ async def create_session(
             )
             .filter(orm.Session.id == session.id)
         )
-    ).scalar()
+    ).scalar_one()
     return fully_loaded_session
 
 
@@ -893,7 +899,7 @@ async def create_tokens_from_session(
             .filter(orm.Identity.principal == principal)
             .filter(orm.Identity.provider == provider)
         )
-    ).scalar()
+    ).scalar_one()
     return {
         "access_token": access_token,
         "expires_in": settings.access_token_max_age.total_seconds(),
@@ -963,6 +969,18 @@ def add_external_routes(
                 return RedirectResponse(status_code=302, url=str(redirect_url))
             else:
                 return tokens
+
+    if isinstance(authenticator, OIDCAuthenticator):
+        _add_oidc_routes(router, provider, authenticator, templates)
+
+
+def _add_oidc_routes(
+    router: APIRouter,
+    provider: str,
+    authenticator: OIDCAuthenticator,
+    templates: Jinja2Templates,
+):
+    "Build the OAuth2 authorization and device code routes for an OIDC Authenticator."
 
     @router.get(f"/provider/{provider}/authorize")
     async def authorize_redirect_route(
@@ -1224,7 +1242,7 @@ async def generate_apikey(db: AsyncSession, principal, apikey_params, request):
             .join(orm.Principal)
             .filter(orm.Principal.id == principal.id)
         )
-    ).scalar()
+    ).scalar_one()
     if keys_count >= API_KEY_LIMIT:
         raise HTTPException(
             400,
@@ -1293,10 +1311,11 @@ def authentication_router() -> APIRouter:
             principals = []
             for (principal_orm,) in principal_orms:
                 latest_activity = await latest_principal_activity(db, principal_orm)
-                principal = schemas.Principal.from_orm(
-                    principal_orm, latest_activity
-                ).model_dump()
-                principals.append(principal)
+                principals.append(
+                    schemas.Principal.from_orm(
+                        principal_orm, latest_activity
+                    ).model_dump()
+                )
         return json_or_msgpack(request, principals)
 
     @router.post(
@@ -1329,12 +1348,13 @@ def authentication_router() -> APIRouter:
                     )
                     .filter(orm.Principal.id == principal_orm.id)
                 )
-            ).scalar()
+            ).scalar_one()
 
-        principal = schemas.Principal.from_orm(fully_loaded_principal_orm).model_dump()
         request.state.endpoint = "auth"
 
-        return json_or_msgpack(request, principal)
+        return json_or_msgpack(
+            request, schemas.Principal.from_orm(fully_loaded_principal_orm).model_dump()
+        )
 
     @router.get(
         "/principal/{uuid}",
@@ -1422,16 +1442,16 @@ def authentication_router() -> APIRouter:
         "Generate an API key for a Principal."
         request.state.endpoint = "auth"
         async with db_factory() as db:
-            principal = (
+            principal_orm = (
                 await db.execute(
                     select(orm.Principal).filter(orm.Principal.uuid == uuid)
                 )
             ).scalar()
-            if principal is None:
+            if principal_orm is None:
                 raise HTTPException(
                     404, f"Principal {uuid} does not exist or insufficient permissions."
                 )
-            return await generate_apikey(db, principal, apikey_params, request)
+            return await generate_apikey(db, principal_orm, apikey_params, request)
 
     @router.post("/session/refresh", response_model=schemas.AccessAndRefreshTokens)
     async def refresh_session(
@@ -1489,7 +1509,7 @@ def authentication_router() -> APIRouter:
             session = await lookup_valid_session(db, session_id)
             if session is None:
                 raise HTTPException(404, detail=f"No session {session_id}")
-            if principal.uuid != session.principal.uuid:
+            if principal is None or principal.uuid != session.principal.uuid:
                 # TODO Add a scope for doing this for other users.
                 raise HTTPException(
                     HTTP_404_NOT_FOUND,

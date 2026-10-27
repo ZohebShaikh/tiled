@@ -149,7 +149,7 @@ class FileSequenceAdapter(Adapter[ArrayStructure]):
         data_source: DataSource[ArrayStructure],
         node: Node,
         /,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> "FileSequenceAdapter":
         # One entry point for both the eager and lazy paths. The eager path
         # derives `data_uris` from the data source's assets (dense 0-based

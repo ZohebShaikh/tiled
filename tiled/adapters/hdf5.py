@@ -456,7 +456,7 @@ class HDF5Adapter(
         structure: Optional[ArrayStructure] = None,
         metadata: Optional[JSON] = None,
         specs: Optional[List[Spec]] = None,
-        **kwargs: Optional[Any],
+        **kwargs: Any,
     ) -> None:
         if tree == HDF5_BROKEN_LINK:
             raise BrokenLink(
