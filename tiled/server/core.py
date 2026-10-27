@@ -1,15 +1,15 @@
 import collections.abc
 import dataclasses
-import inspect
 import itertools
 import operator
 import re
 import sys
+import types
 import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from hashlib import md5
-from typing import Any, Literal, Optional
+from typing import Any, List, Literal, Optional, Protocol, Tuple, runtime_checkable
 
 import anyio
 import dateutil.tz
@@ -147,6 +147,29 @@ def pagination_links(base_url, route, path_parts, page, next_cursor, length_hint
     return links
 
 
+@runtime_checkable
+class PaginatedContainerAdapter(Protocol):
+    "A container that supports cursor- and offset-based pagination."
+
+    async def cursor_for_offset(self, offset: int) -> Optional[int]: ...
+
+    async def keys_page(
+        self, cursor: Optional[int] = None, limit: Optional[int] = None
+    ) -> Tuple[List[str], Optional[int]]: ...
+
+    async def items_page(
+        self, cursor: Optional[int] = None, limit: Optional[int] = None
+    ) -> Tuple[List[Tuple[str, Any]], Optional[int]]: ...
+
+    async def keys_range(
+        self, offset: int = 0, limit: Optional[int] = None
+    ) -> List[str]: ...
+
+    async def items_range(
+        self, offset: int = 0, limit: Optional[int] = None
+    ) -> List[Tuple[str, Any]]: ...
+
+
 async def apply_search(tree, filters, query_registry):
     queries = defaultdict(
         dict
@@ -155,7 +178,13 @@ async def apply_search(tree, filters, query_registry):
     for key, value in filters.items():
         if value is None:
             continue
-        name, field = _FILTER_PARAM_PATTERN.match(key).groups()
+        match = _FILTER_PARAM_PATTERN.match(key)
+        if match is None:
+            raise HTTPException(
+                status_code=HTTP_400_BAD_REQUEST,
+                detail=f"Malformed filter parameter {key!r}",
+            )
+        name, field = match.groups()
         queries[name][field] = value
 
     # Apply the queries and obtain a narrowed tree.
@@ -254,7 +283,7 @@ async def construct_entries_response(
     next_cursor = None
     if fields == [schemas.EntryFields.none]:
         # Pull a page of just the keys, which is cheaper.
-        if hasattr(tree, "keys_page"):
+        if isinstance(tree, PaginatedContainerAdapter):
             if page.cursor is not None:
                 keys, next_cursor = await tree.keys_page(page.cursor, page.limit)
             else:
@@ -273,7 +302,7 @@ async def construct_entries_response(
         items = []
     else:
         # Pull the entire page of full items into memory.
-        if hasattr(tree, "items_page"):
+        if isinstance(tree, PaginatedContainerAdapter):
             if page.cursor is not None:
                 items, next_cursor = await tree.items_page(page.cursor, page.limit)
             else:
@@ -318,10 +347,11 @@ async def construct_entries_response(
         # be no 'Expires' header. We will pessimistically assume the values
         # are immediately stale.
         if metadata_stale_at is not None:
-            if getattr(entry, "metadata_stale_at", None) is None:
+            entry_stale_at = getattr(entry, "metadata_stale_at", None)
+            if entry_stale_at is None:
                 metadata_stale_at = None
             else:
-                metadata_stale_at = min(metadata_stale_at, entry.metadata_stale_at)
+                metadata_stale_at = min(metadata_stale_at, entry_stale_at)
 
     return (
         schemas.Response(data=data, links=links, meta={"count": count}),
@@ -466,15 +496,9 @@ async def construct_data_response(
         raise UnsupportedMediaTypes(
             f"This type is supported in general but there was an error packing this specific data: {err.args[0]}",
         )
-    if inspect.isgenerator(content) or inspect.isasyncgen(content):
-        response_class = StreamingResponse
-    else:
-        response_class = Response
-    return response_class(
-        content,
-        media_type=media_type,
-        headers=headers,
-    )
+    if isinstance(content, (types.GeneratorType, types.AsyncGeneratorType)):
+        return StreamingResponse(content, media_type=media_type, headers=headers)
+    return Response(content, media_type=media_type, headers=headers)
 
 
 async def construct_resource(

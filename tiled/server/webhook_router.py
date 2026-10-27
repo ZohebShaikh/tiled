@@ -24,6 +24,7 @@ from sqlalchemy import select
 from starlette.status import HTTP_404_NOT_FOUND
 
 from ..catalog import orm
+from ..catalog.adapter import CatalogNodeAdapter
 from ..config import WebhooksConfig
 from ..type_aliases import AccessTags, Scopes
 from .authentication import (
@@ -130,15 +131,14 @@ def _build_url_validator(config: WebhooksConfig) -> UrlValidator:
     return _url_validator
 
 
-def _get_catalog_context(entry):
-    """Extract the catalog Context from an adapter entry, or raise 404."""
-    context = getattr(entry, "context", None)
-    if context is None:
+def _as_catalog_node(entry) -> CatalogNodeAdapter:
+    """Return the entry as a catalog node, or raise 404."""
+    if not isinstance(entry, CatalogNodeAdapter):
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
             detail="Webhooks are only supported on catalog-backed trees.",
         )
-    return context
+    return entry
 
 
 async def _node_path_from_id(ctx, node_id: int) -> str:
@@ -242,7 +242,8 @@ def get_webhook_router(
             structure_families=None,
             access_policy=getattr(request.app.state, "access_policy", None),
         )
-        ctx = _get_catalog_context(entry)
+        entry = _as_catalog_node(entry)
+        ctx = entry.context
 
         await webhook_url_validator(body)
 
@@ -303,7 +304,8 @@ def get_webhook_router(
             structure_families=None,
             access_policy=getattr(request.app.state, "access_policy", None),
         )
-        ctx = _get_catalog_context(entry)
+        entry = _as_catalog_node(entry)
+        ctx = entry.context
 
         async with ctx.session() as db:
             result = await db.execute(

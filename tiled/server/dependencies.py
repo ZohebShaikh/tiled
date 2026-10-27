@@ -1,8 +1,7 @@
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
-import pydantic_settings
 from fastapi import HTTPException, Query, Request
-from pydantic import constr
+from pydantic import StringConstraints
 from starlette.status import (
     HTTP_400_BAD_REQUEST,
     HTTP_403_FORBIDDEN,
@@ -23,7 +22,9 @@ from .utils import filter_for_access, record_timing
 # Template for the "sort" query parameters.
 # An empty string is allowed here for back-compatibility with old clients
 # that send sort= when no sort is specified. Non-empty values must be a valid sort field.
-SortField = constr(pattern=r"^(?:[+-][a-zA-Z0-9_.]*|[a-zA-Z0-9_.]+)?$")
+SortField = Annotated[
+    str, StringConstraints(pattern=r"^(?:[+-][a-zA-Z0-9_.]*|[a-zA-Z0-9_.]+)?$")
+]
 
 # Limits for pagination parameters
 DEFAULT_PAGE_SIZE = 100
@@ -47,7 +48,7 @@ async def get_entry(
     principal: Optional[Principal],
     authn_access_tags: Optional[AccessTags],
     authn_scopes: Scopes,
-    root_tree: pydantic_settings.BaseSettings,
+    root_tree: AnyAdapter,
     session_state: dict,
     metrics: dict,
     structure_families: Optional[set[StructureFamily]] = None,
@@ -65,8 +66,9 @@ async def get_entry(
     entry = root_tree
     # If the entry/adapter can take a session state, pass it in.
     # The entry/adapter may return itself or a different object.
-    if hasattr(entry, "with_session_state") and session_state:
-        entry = entry.with_session_state(session_state)
+    with_session_state = getattr(entry, "with_session_state", None)
+    if with_session_state is not None and session_state:
+        entry = with_session_state(session_state)
     # start at the root
     # filter and keep only what we are allowed to see from here
     entry = await filter_for_access(
@@ -80,12 +82,13 @@ async def get_entry(
     )
     try:
         for i, segment in enumerate(path_parts):
-            if hasattr(entry, "lookup_adapter"):
+            lookup_adapter = getattr(entry, "lookup_adapter", None)
+            if lookup_adapter is not None:
                 # New catalog adapter
                 # This adapter can jump directly to the node of interest,
                 # but currenty doesn't, to ensure access_policy is applied.
                 # Raises NoEntry or BrokenLink if the path is not found
-                entry = await entry.lookup_adapter([segment])
+                entry = await lookup_adapter([segment])
             else:
                 # Old-style dict-like interface
                 # Traverse into sub-tree(s) to reach the desired entry

@@ -496,13 +496,14 @@ def get_router(
                 status_code=HTTP_400_BAD_REQUEST,
                 detail="Sorting is not supported for deep search.",
             )
-        if not hasattr(entry, "search_deep"):
+        search_deep = getattr(entry, "search_deep", None)
+        if search_deep is None:
             raise HTTPException(
                 status_code=HTTP_400_BAD_REQUEST,
                 detail="This Tree does not support deep search.",
             )
         try:
-            entry = entry.search_deep(max_depth=max_depth)
+            entry = search_deep(max_depth=max_depth)
         except (NotImplementedError, ValueError) as err:
             raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(err))
         if hasattr(entry, "map_mounts"):
@@ -2646,6 +2647,16 @@ def get_router(
                 status_code=HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="access_tags patch must produce a list of strings",
             )
+        if not isinstance(metadata, dict):
+            raise HTTPException(
+                status_code=HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="metadata patch must produce an object",
+            )
+        if not isinstance(specs, list):
+            raise HTTPException(
+                status_code=HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="specs patch must produce a list",
+            )
 
         # BACK-COMPAT: a client older than v0.2.19 patches an `access_blob`
         # dict rather than a tag list, so its patch has to be applied in that
@@ -3013,13 +3024,14 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )  # TODO: Separate scope for assets?
-        if not hasattr(entry, "asset_by_id"):
+        asset_by_id = getattr(entry, "asset_by_id", None)
+        if asset_by_id is None:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support downloading assets.",
             )
 
-        asset = await entry.asset_by_id(id)
+        asset = await asset_by_id(id)
         if asset is None:
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND,
@@ -3083,12 +3095,13 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )
-        if not hasattr(entry, "delete_asset"):
+        delete_asset = getattr(entry, "delete_asset", None)
+        if delete_asset is None:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support deleting assets.",
             )
-        result = await entry.delete_asset(id, external_only=external_only)
+        result = await delete_asset(id, external_only=external_only)
         if result is None:
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND,

@@ -16,7 +16,10 @@ T = TypeVar("T")
 
 
 def write_alembic_ini(
-    alembic_ini_template_path: Path, alembic_dir: Path, path: Path, database_uri: str
+    alembic_ini_template_path: Union[str, Path],
+    alembic_dir: Union[str, Path],
+    path: Union[str, Path],
+    database_uri: str,
 ):
     """Write a complete alembic.ini from our template.
 
@@ -47,7 +50,9 @@ def write_alembic_ini(
 
 @contextlib.contextmanager
 def temp_alembic_ini(
-    alembic_ini_template_path: Path, alembic_dir: Path, database_uri: str
+    alembic_ini_template_path: Union[str, Path],
+    alembic_dir: Union[str, Path],
+    database_uri: str,
 ) -> Generator[str]:
     """
     Context manager for temporary alembic configuration file
@@ -76,7 +81,11 @@ def temp_alembic_ini(
         yield alembic_ini
 
 
-def stamp_head(alembic_ini_template_path: Path, alembic_dir: Path, engine_url: str):
+def stamp_head(
+    alembic_ini_template_path: Union[str, Path],
+    alembic_dir: Union[str, Path],
+    engine_url: str,
+):
     """
     Upgrade schema to the specified revision.
     """
@@ -88,7 +97,10 @@ def stamp_head(alembic_ini_template_path: Path, alembic_dir: Path, engine_url: s
 
 
 def upgrade(
-    alembic_ini_template_path: Path, alembic_dir: Path, engine_url: str, revision: str
+    alembic_ini_template_path: Union[str, Path],
+    alembic_dir: Union[str, Path],
+    engine_url: str,
+    revision: str,
 ):
     """
     Upgrade schema to the specified revision.
@@ -101,7 +113,10 @@ def upgrade(
 
 
 def downgrade(
-    alembic_ini_template_path: Path, alembic_dir: Path, engine_url: str, revision: str
+    alembic_ini_template_path: Union[str, Path],
+    alembic_dir: Union[str, Path],
+    engine_url: str,
+    revision: str,
 ):
     """
     Downgrade schema to the specified revision.

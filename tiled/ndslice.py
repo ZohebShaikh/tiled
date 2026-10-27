@@ -526,7 +526,7 @@ class NDSlice(tuple):
         )
 
     @classmethod
-    def from_numpy_str(cls, arg: str) -> "NDSlice":
+    def from_numpy_str(cls, arg: str) -> Self:
         """Parse and convert a numpy-style string representation of a slice
 
         For example, '(1:3, 4, 1:5:2, ...)' is converted to (slice(1, 3), 4, slice(1, 5, 2), ...).

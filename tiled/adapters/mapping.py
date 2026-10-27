@@ -11,9 +11,9 @@ from typing import (
     Iterator,
     List,
     Optional,
+    Sequence,
     Tuple,
     Union,
-    cast,
 )
 
 from tiled.adapters.container import ContainerAdapter
@@ -43,7 +43,6 @@ from ..queries import (
     StructureFamilyQuery,
 )
 from ..query_registration import QueryTranslationRegistry
-from ..server.schemas import SortingDirection, SortingItem
 from ..structures.core import Spec, StructureFamily
 from ..type_aliases import JSON
 from ..utils import UNCHANGED, Sentinel
@@ -65,7 +64,7 @@ class MapAdapter(Generic[A], ContainerAdapter[A], IndexersMixin):
         mapping: Mapping[str, A],
         *,
         metadata: Optional[JSON] = None,
-        sorting: Optional[List[SortingItem]] = None,
+        sorting: Optional[List[Tuple[str, int]]] = None,
         specs: Optional[List[Spec]] = None,
         entries_stale_after: Optional[timedelta] = None,
         metadata_stale_after: Optional[timedelta] = None,
@@ -95,7 +94,7 @@ class MapAdapter(Generic[A], ContainerAdapter[A], IndexersMixin):
             # This is a special case that means, "the given ordering".
             # By giving that a name ("_") we enable requests to asking for the
             # last N by requesting the sorting ("_", -1).
-            sorting = [SortingItem(key="_", direction=SortingDirection.ASCENDING)]
+            sorting = [("_", 1)]
         self._sorting = sorting
         self._must_revalidate = must_revalidate
         self.include_routers: List[APIRouter] = []
@@ -133,7 +132,7 @@ class MapAdapter(Generic[A], ContainerAdapter[A], IndexersMixin):
         self._must_revalidate = value
 
     @property
-    def sorting(self) -> List[SortingItem]:
+    def sorting(self) -> List[Tuple[str, int]]:
         """
 
         Returns
@@ -240,7 +239,7 @@ class MapAdapter(Generic[A], ContainerAdapter[A], IndexersMixin):
         *args: Any,
         mapping: Union[Sentinel, Mapping[str, A]] = UNCHANGED,
         metadata: Union[Sentinel, JSON] = UNCHANGED,
-        sorting: Union[Sentinel, List[SortingItem]] = UNCHANGED,
+        sorting: Union[Sentinel, List[Tuple[str, int]]] = UNCHANGED,
         must_revalidate: Union[Sentinel, bool] = UNCHANGED,
         **kwargs: Any,
     ) -> "MapAdapter[A]":
@@ -259,23 +258,23 @@ class MapAdapter(Generic[A], ContainerAdapter[A], IndexersMixin):
         -------
 
         """
-        if mapping is UNCHANGED:
+        if isinstance(mapping, Sentinel):
             mapping = self._mapping
-        if metadata is UNCHANGED:
+        if isinstance(metadata, Sentinel):
             metadata = self._metadata
-        if sorting is UNCHANGED:
+        if isinstance(sorting, Sentinel):
             sorting = self._sorting
-        if must_revalidate is UNCHANGED:
+        if isinstance(must_revalidate, Sentinel):
             must_revalidate = self.must_revalidate
         return type(self)(
             # *args,
-            mapping=cast(Dict[str, A], mapping),
-            sorting=cast(List[SortingItem], sorting),
-            metadata=cast(JSON, self._metadata),
+            mapping=mapping,
+            sorting=sorting,
+            metadata=metadata,
             specs=self.specs,
             entries_stale_after=self.entries_stale_after,
-            metadata_stale_after=self.entries_stale_after,
-            must_revalidate=cast(bool, must_revalidate),
+            metadata_stale_after=self.metadata_stale_after,
+            must_revalidate=must_revalidate,
             **kwargs,
         )
 
@@ -342,7 +341,7 @@ class MapAdapter(Generic[A], ContainerAdapter[A], IndexersMixin):
                     continue
                 if isinstance(value, MapAdapter):
                     _walk(value._mapping, path, depth + 1)
-                elif hasattr(value, "search_deep") and (
+                elif (search_deep := getattr(value, "search_deep", None)) and (
                     getattr(value, "structure_family", None)
                     == StructureFamily.container
                 ):
@@ -352,7 +351,7 @@ class MapAdapter(Generic[A], ContainerAdapter[A], IndexersMixin):
                     mounts.append(
                         (
                             "/".join(path),
-                            value.search_deep(max_depth=remaining_depth),
+                            search_deep(max_depth=remaining_depth),
                         )
                     )
 
@@ -407,7 +406,7 @@ class MapAdapter(Generic[A], ContainerAdapter[A], IndexersMixin):
 
         return data
 
-    def sort(self, sorting: SortingItem) -> "MapAdapter[A]":
+    def sort(self, sorting: Sequence[Tuple[str, int]]) -> "MapAdapter[A]":
         """
 
         Parameters
@@ -439,7 +438,7 @@ class MapAdapter(Generic[A], ContainerAdapter[A], IndexersMixin):
                 to_reverse = list(mapping.items())
                 mapping = dict(reversed(to_reverse))
 
-        return self.new_variation(mapping=mapping, sorting=sorting)
+        return self.new_variation(mapping=mapping, sorting=list(sorting))
 
     # The following two methods are used by keys(), values(), items().
 
@@ -534,7 +533,7 @@ def walk_string_values(
                     yield item
 
 
-def counter_to_dict(counter: Dict[str, Any], counts: Any) -> List[Dict[str, Any]]:
+def counter_to_dict(counter: Mapping[Any, int], counts: Any) -> List[Dict[str, Any]]:
     """
 
     Parameters

@@ -72,14 +72,14 @@ async def initialize_database(engine: AsyncEngine):
             from sqlalchemy.dialects.sqlite import insert as upsert
 
         await connection.execute(
-            upsert(orm.AccessTag.__table__)
+            upsert(orm.AccessTag)
             .values(name="public", is_public=True)
             .on_conflict_do_nothing(index_elements=["name"])
         )
         # The tag id is resolved in SQL, so no round-trip is needed and the
         # statement is a no-op when the association already exists.
         await connection.execute(
-            upsert(orm.NodeAccessTagAssociation.__table__)
+            upsert(orm.NodeAccessTagAssociation)
             .from_select(
                 ["node_id", "tag_id"],
                 select(literal(0), orm.AccessTag.id).where(
@@ -140,7 +140,7 @@ async def register_principal_tag_rows(connection, access_tag_names):
     else:
         from sqlalchemy.dialects.sqlite import insert as upsert
     await connection.execute(
-        upsert(orm.AccessTag.__table__)
+        upsert(orm.AccessTag)
         .values([{"name": name, "is_public": False} for name in sorted(principal_tags)])
         .on_conflict_do_nothing(index_elements=["name"])
     )

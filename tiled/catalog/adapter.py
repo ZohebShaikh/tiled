@@ -127,6 +127,7 @@ from ..utils import (
     UNCHANGED,
     Conflicts,
     OneShotCachedMap,
+    Sentinel,
     UnsupportedQueryType,
     ensure_awaitable,
     ensure_specified_sql_driver,
@@ -145,7 +146,7 @@ from .explain import ExplainAsyncSession
 from .utils import compute_structure_id
 
 if TYPE_CHECKING:
-    from ..adapters.protocols import AnyAdapter
+    from ..adapters.protocols import ArrayAdapter
     from ..ndslice import NDBlock
 
 logger = logging.getLogger(__name__)
@@ -280,7 +281,10 @@ class Context:
         storage_max_overflow=10,
         webhook_secret_keys: Optional[List[str]] = None,
     ):
-        self.engine = get_database_engine(database_settings)
+        engine = get_database_engine(database_settings)
+        if engine is None:
+            raise ValueError("The catalog requires a database URI.")
+        self.engine = engine
         self.database_settings = database_settings
         self.writable_storage = {}
         self.readable_storage = {}
@@ -796,7 +800,7 @@ class CatalogNodeAdapter:
         *,
         block: Optional["NDBlock"] = None,
         slice: Any = ...,
-    ) -> Optional["AnyAdapter"]:
+    ) -> Optional["ArrayAdapter"]:
         """Build an I/O adapter that resolves only the assets a read will touch.
 
         Returns `None` (so the caller falls back to :meth:`get_adapter`) unless
@@ -845,6 +849,8 @@ class CatalogNodeAdapter:
         # file count) to compute the file geometry.
         data_source = DataSource.from_orm(ds, include_assets=False)
         structure = data_source.structure
+        if structure is None:
+            return None
 
         # A block read's file selection depends ONLY on the block: read_block
         # loads the whole block along the stacking axis and applies any
@@ -937,25 +943,27 @@ class CatalogNodeAdapter:
     def new_variation(
         self,
         *args,
-        sorting=UNCHANGED,
+        sorting: Union[
+            Optional[list[tuple[str, Literal[1, -1]]]], Sentinel
+        ] = UNCHANGED,
         conditions=UNCHANGED,
         queries=UNCHANGED,
-        deep=UNCHANGED,
-        max_depth=UNCHANGED,
+        deep: Union[bool, Sentinel] = UNCHANGED,
+        max_depth: Union[Optional[int], Sentinel] = UNCHANGED,
         access_filters=UNCHANGED,
         **kwargs,
     ):
-        if access_filters is UNCHANGED:
+        if isinstance(access_filters, Sentinel):
             access_filters = self.access_filters
-        if sorting is UNCHANGED:
+        if isinstance(sorting, Sentinel):
             sorting = self.sorting
-        if conditions is UNCHANGED:
+        if isinstance(conditions, Sentinel):
             conditions = self.conditions
-        if queries is UNCHANGED:
+        if isinstance(queries, Sentinel):
             queries = self.queries
-        if deep is UNCHANGED:
+        if isinstance(deep, Sentinel):
             deep = self.deep
-        if max_depth is UNCHANGED:
+        if isinstance(max_depth, Sentinel):
             max_depth = self.max_depth
         return type(self)(
             self.context,
@@ -1079,7 +1087,7 @@ class CatalogNodeAdapter:
 
     async def get_distinct(self, metadata, structure_families, specs, counts):
         if self.node.data_sources:
-            return (await self.get_adapter()).get_disinct(
+            return (await self.get_adapter()).get_distinct(
                 metadata, structure_families, specs, counts
             )
         data = {}
@@ -1341,13 +1349,16 @@ class CatalogNodeAdapter:
                     .values(size=asset.size)
                 )
         else:
-            statement = self.insert(orm.Asset).values(
-                data_uri=asset.data_uri,
-                is_directory=asset.is_directory,
-                size=asset.size,
+            statement = (
+                self.insert(orm.Asset)
+                .values(
+                    data_uri=asset.data_uri,
+                    is_directory=asset.is_directory,
+                    size=asset.size,
+                )
+                .returning(orm.Asset.id)
             )
-            result = await db.execute(statement)
-            (asset_id,) = result.inserted_primary_key
+            asset_id = (await db.execute(statement)).scalar_one()
 
         return asset_id
 
@@ -1408,6 +1419,7 @@ class CatalogNodeAdapter:
         if (
             self.context.streaming_cache
             and data_source.structure_family == StructureFamily.array
+            and structure is not None
         ):
             sequence = await self.context.streaming_cache.incr_seq(self.node.id)
             metadata = {
@@ -2614,7 +2626,8 @@ def delete_physical_asset(
                 # If the table is empty, we can drop it
                 with conn.cursor() as cursor:
                     cursor.execute(f'SELECT COUNT(*) FROM "{table_name}";')
-                    if cursor.fetchone()[0] == 0:
+                    row = cursor.fetchone()
+                    if row is not None and row[0] == 0:
                         cursor.execute(f'DROP TABLE IF EXISTS "{table_name}";')
                 conn.commit()
 

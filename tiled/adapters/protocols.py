@@ -1,6 +1,5 @@
 from abc import abstractmethod
-from collections.abc import Mapping
-from typing import Any, Dict, List, Literal, Optional, Protocol, Set, Union
+from typing import AbstractSet, Any, Dict, List, Literal, Optional, Protocol, Union
 
 import dask.dataframe
 import pandas
@@ -19,28 +18,19 @@ from ..structures.core import Spec, StructureFamily
 from ..structures.sparse import SparseStructure
 from ..structures.table import TableStructure
 from ..type_aliases import JSON
+from .container import ContainerAdapter
 
 
 class BaseAdapter(Protocol):
-    supported_storage: Set[type[Storage]]
+    @classmethod
+    def supported_storage(cls) -> AbstractSet[type[Storage]]: ...
 
     @abstractmethod
     def metadata(self) -> JSON:
         pass
 
-    specs: List[Spec]
-
-
-class ContainerAdapter(Mapping[str, "AnyAdapter"], BaseAdapter):
-    structure_family: Literal[StructureFamily.container]
-
-    @abstractmethod
-    def structure(self) -> None:
-        pass
-
-    @abstractmethod
-    def read(self, fields: Optional[List[str]] = None) -> Any:
-        pass
+    @property
+    def specs(self) -> List[Spec]: ...
 
 
 class ArrayAdapter(BaseAdapter, Protocol):
@@ -141,7 +131,7 @@ AnyAdapter = Union[
     ArrayAdapter,
     AwkwardAdapter,
     BytesAdapter,
-    ContainerAdapter,
+    ContainerAdapter[Any],
     RaggedAdapter,
     SparseAdapter,
     TableAdapter,

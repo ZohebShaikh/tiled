@@ -259,7 +259,7 @@ class ZarrGroupAdapter(
     def search(self, query: Any) -> None:
         raise NotImplementedError
 
-    def read(self, fields: Optional[str]) -> "ZarrGroupAdapter":
+    def read(self, fields: Optional[str] = None) -> "ZarrGroupAdapter":
         if fields is not None:
             raise NotImplementedError
         return self
