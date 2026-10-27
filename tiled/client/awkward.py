@@ -1,12 +1,17 @@
 import awkward
 
 from ..serialization.awkward import from_zipped_buffers, to_zipped_buffers
-from ..structures.awkward import project_form
+from ..structures.awkward import AwkwardStructure, project_form
 from .base import BaseClient
 from .utils import export_util, handle_error, retry_call, retry_context
 
 
 class AwkwardClient(BaseClient):
+    def structure(self) -> AwkwardStructure:
+        structure = super().structure()
+        assert isinstance(structure, AwkwardStructure)
+        return structure
+
     def __repr__(self):
         # TODO Include some summary of the structure. Probably
         # lift __repr__ code from awkward itself here.

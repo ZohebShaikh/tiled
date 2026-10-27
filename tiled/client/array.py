@@ -11,6 +11,7 @@ import numpy
 from numpy.typing import NDArray
 
 from ..ndslice import NDBlock, NDSlice, split_slice
+from ..structures.array import ArrayStructure
 from ..structures.core import STRUCTURE_TYPES
 from ..utils import Conflicts
 from .base import BaseClient
@@ -36,6 +37,11 @@ class _DaskArrayClient(BaseClient):
     # data in blocks. If set to None, the client will not attempt to combine
     # requests and will fetch each chunk separately as determiied by the structure.
     RESPONSE_BYTESIZE_LIMIT = 100 * 1024 * 1024  # 100 MiB
+
+    def structure(self) -> ArrayStructure:
+        structure = super().structure()
+        assert isinstance(structure, ArrayStructure)
+        return structure
 
     def __init__(self, *args, item, **kwargs):
         super().__init__(*args, item=item, **kwargs)

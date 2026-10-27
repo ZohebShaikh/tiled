@@ -12,7 +12,11 @@ import ragged
 from ..ndslice import NDSlice
 from ..serialization.ragged import from_zipped_buffers, to_zipped_buffers
 from ..structures.core import STRUCTURE_TYPES
-from ..structures.ragged import RaggedCompatibleType, make_ragged_array
+from ..structures.ragged import (
+    RaggedCompatibleType,
+    RaggedStructure,
+    make_ragged_array,
+)
 from ..utils import Conflicts
 from .base import BaseClient
 from .utils import (
@@ -25,6 +29,11 @@ from .utils import (
 
 
 class RaggedClient(BaseClient):
+    def structure(self) -> RaggedStructure:
+        structure = super().structure()
+        assert isinstance(structure, RaggedStructure)
+        return structure
+
     def write(self, array: RaggedCompatibleType, persist=True):
         """Write a ragged array in full.
 

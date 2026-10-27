@@ -4,7 +4,7 @@ from collections.abc import MutableMapping
 from copy import copy, deepcopy
 from dataclasses import asdict
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 from urllib.parse import parse_qs, urlparse
 
 import json_merge_patch
@@ -16,6 +16,7 @@ from tiled.client.context import Context
 
 from ..structures.core import STRUCTURE_TYPES, Spec, StructureFamily
 from ..structures.data_source import DataSource
+from ..structures.root import Structure
 from ..utils import UNCHANGED, DictView, ListView, patch_mimetypes, safe_json_dump
 from .metadata_update import apply_update_patch
 from .utils import (
@@ -163,7 +164,7 @@ class BaseClient:
 
         super().__init__()
 
-    def structure(self):
+    def structure(self) -> Optional[Structure]:
         """
         Return a dataclass describing the structure of the data.
         """

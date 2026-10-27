@@ -5,6 +5,7 @@ import sparse
 from ndindex import ndindex
 
 from ..serialization.table import deserialize_arrow, serialize_arrow
+from ..structures.sparse import COOStructure
 from ..utils import APACHE_ARROW_FILE_MIME_TYPE
 from .base import BaseClient
 from .utils import (
@@ -17,6 +18,11 @@ from .utils import (
 
 
 class SparseClient(BaseClient):
+    def structure(self) -> COOStructure:
+        structure = super().structure()
+        assert isinstance(structure, COOStructure)
+        return structure
+
     @property
     def dims(self):
         return self.structure().dims

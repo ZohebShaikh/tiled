@@ -9,6 +9,7 @@ import dask.dataframe
 import httpx2 as httpx
 
 from ..serialization.table import deserialize_arrow, serialize_arrow
+from ..structures.table import TableStructure
 from ..utils import APACHE_ARROW_FILE_MIME_TYPE, UNCHANGED
 from .base import BaseClient
 from .utils import (
@@ -30,6 +31,11 @@ _EXTRA_CHARS_PER_ITEM = len("&column=")
 
 class _DaskDataFrameClient(BaseClient):
     "Client-side wrapper around an dataframe-like that returns dask dataframes"
+
+    def structure(self) -> TableStructure:
+        structure = super().structure()
+        assert isinstance(structure, TableStructure)
+        return structure
 
     def new_variation(self, structure=UNCHANGED, **kwargs):
         if structure is UNCHANGED:
