@@ -8,7 +8,7 @@ import time
 import uuid
 from collections.abc import Iterable
 from datetime import timedelta
-from typing import Any, Dict, List, Mapping, Optional, Union, cast
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union, cast
 
 import httpx2 as httpx
 import jwt
@@ -271,6 +271,8 @@ properties:
         return self._try_fetch_keys()
 
     def _signing_key(self, kid: Optional[str]) -> jwt.PyJWK:
+        if kid is None:
+            raise jwt.InvalidKeyError("Token header has no 'kid'")
         try:
             return jwt.PyJWKSet.from_dict({"keys": self.keys()})[kid]
         except KeyError:
@@ -704,7 +706,7 @@ class SAMLAuthenticator(ExternalAuthenticator):
             )
         from onelogin.saml2.auth import OneLogin_Saml2_Auth
 
-        req = await prepare_saml_from_fastapi_request(request, True)
+        req = await prepare_saml_from_fastapi_request(request)
         auth = OneLogin_Saml2_Auth(req, self.saml_settings)
         auth.process_response()  # Process IdP response
         errors = auth.get_errors()  # This method receives an array with the errors
@@ -1006,12 +1008,19 @@ class LDAPAuthenticator(InternalAuthenticator):
         else:
             return 389  # default plaintext port for LDAP
 
-    async def resolve_username(self, username_supplied_by_user):
+    async def resolve_username(
+        self, username_supplied_by_user: str
+    ) -> Optional[Tuple[str, str]]:
+        "Look up (username, DN) for the given login, or None if it cannot be resolved."
         import ldap3
         import ldap3.utils.conv
 
+        if self.user_search_base is None:
+            raise ValueError(
+                "LDAPAuthenticator with lookup_dn requires user_search_base"
+            )
         search_dn = self.lookup_dn_search_user
-        if self.escape_userdn:
+        if self.escape_userdn and search_dn is not None:
             search_dn = ldap3.utils.conv.escape_filter_chars(search_dn)
         conn = await asyncio.get_running_loop().run_in_executor(
             None, self.get_connection, search_dn, self.lookup_dn_search_password
@@ -1020,7 +1029,7 @@ class LDAPAuthenticator(InternalAuthenticator):
         if not is_bound:
             msg = "Failed to connect to LDAP server with search user '{search_dn}'"
             logger.warning(msg.format(search_dn=search_dn))
-            return (None, None)
+            return None
 
         search_filter = self.lookup_dn_search_filter.format(
             login_attr=self.user_attribute, login=username_supplied_by_user
@@ -1050,7 +1059,7 @@ class LDAPAuthenticator(InternalAuthenticator):
         )
         await asyncio.get_running_loop().run_in_executor(None, search_func)
 
-        response = conn.response
+        response = conn.response or []
         if len(response) == 0 or "attributes" not in response[0].keys():
             msg = (
                 "No entry found for user '{username}' "
@@ -1061,12 +1070,12 @@ class LDAPAuthenticator(InternalAuthenticator):
                     username=username_supplied_by_user, attribute=self.user_attribute
                 )
             )
-            return (None, None)
+            return None
 
         user_dn = response[0]["attributes"][self.lookup_dn_user_dn_attribute]
         if isinstance(user_dn, list):
             if len(user_dn) == 0:
-                return (None, None)
+                return None
             elif len(user_dn) == 1:
                 user_dn = user_dn[0]
             else:
@@ -1173,15 +1182,11 @@ class LDAPAuthenticator(InternalAuthenticator):
         if isinstance(bind_dn_template, str):
             bind_dn_template = [bind_dn_template]
 
-        # sanity check
-        if not self.lookup_dn and not bind_dn_template:
-            logger.warning(
-                "Login not allowed, please configure 'lookup_dn' or 'bind_dn_template'."
-            )
-            return None
-
         if self.lookup_dn:
-            username, resolved_dn = await self.resolve_username(username)
+            resolved = await self.resolve_username(username)
+            if resolved is None:
+                return None
+            username, resolved_dn = resolved
             if not username:
                 return None
             if str(self.lookup_dn_user_dn_attribute).upper() == "CN":
@@ -1189,6 +1194,13 @@ class LDAPAuthenticator(InternalAuthenticator):
                 username = re.subn(r"([^\\]),", r"\1\,", username)[0]
             if not bind_dn_template:
                 bind_dn_template = [resolved_dn]
+
+        # sanity check
+        if not bind_dn_template:
+            logger.warning(
+                "Login not allowed, please configure 'lookup_dn' or 'bind_dn_template'."
+            )
+            return None
 
         is_bound = False
         conn: Any = None

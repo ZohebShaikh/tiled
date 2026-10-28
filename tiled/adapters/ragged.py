@@ -186,7 +186,7 @@ class RaggedSQLAdapter(Adapter[RaggedStructure]):
             f"ORDER BY chunk_index ASC"
         )
         with closing(tab.storage.connect()) as conn:
-            with conn.cursor() as cursor:
+            with closing(conn.cursor()) as cursor:
                 cursor.execute(query)
                 data = cursor.fetch_arrow_table()
             conn.commit()

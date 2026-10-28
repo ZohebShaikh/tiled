@@ -66,8 +66,9 @@ class TaskMap(TypedDict):
     shutdown: list[AppTask]
 
 
+# A 'module:attribute' string (or the live object), validated into the object.
 EntryPointString = Annotated[
-    str,
+    Any,
     AfterValidator(import_object),
 ]
 

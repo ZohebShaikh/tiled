@@ -272,7 +272,7 @@ class SQLAdapter(Adapter[TableStructure]):
                     )
 
         with closing(storage.connect()) as conn:
-            with conn.cursor() as cursor:
+            with closing(conn.cursor()) as cursor:
                 cursor.execute(create_table_statement)
 
             # Create an index on the dataset_id and partition_id columns to speed up queries.
@@ -281,7 +281,7 @@ class SQLAdapter(Adapter[TableStructure]):
                 "CREATE INDEX IF NOT EXISTS dataset_and_partition_index "
                 f'ON "{table_name}"(_dataset_id, _partition_id)'
             )
-            with conn.cursor() as cursor:
+            with closing(conn.cursor()) as cursor:
                 cursor.execute(create_index_statement)
 
             if primary_key:
@@ -290,7 +290,7 @@ class SQLAdapter(Adapter[TableStructure]):
                     "CREATE UNIQUE INDEX IF NOT EXISTS unique_ordering_per_dataset_index "
                     f'ON "{table_name}"(_dataset_id, {pkey_columns})'
                 )
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     cursor.execute(create_unique_index_statement)
 
             # Just once, create a SEQUENCE (or the closest analogue in SQLite) to
@@ -300,16 +300,16 @@ class SQLAdapter(Adapter[TableStructure]):
             # initializing here.
             if storage.dialect == "sqlite":
                 # Create single-row table with a counter, if it does not exist.
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     cursor.execute(
                         "CREATE TABLE IF NOT EXISTS _dataset_id_counter (value INTEGER NOT NULL)"
                     )
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     cursor.execute(
                         "INSERT INTO _dataset_id_counter (value) "
                         "SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM _dataset_id_counter)"
                     )
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     # Increment the counter.
                     cursor.execute(
                         "UPDATE _dataset_id_counter SET value = value + 1 "
@@ -317,9 +317,9 @@ class SQLAdapter(Adapter[TableStructure]):
                     )
                     (dataset_id,) = _fetchone(cursor)
             else:
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     cursor.execute("CREATE SEQUENCE IF NOT EXISTS _dataset_id_counter")
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     cursor.execute("SELECT nextval('_dataset_id_counter')")
                     (dataset_id,) = _fetchone(cursor)
             data_source.parameters["dataset_id"] = dataset_id
@@ -514,7 +514,7 @@ class SQLAdapter(Adapter[TableStructure]):
             table = table.rename_columns(upr_lwr_case_mapping)
 
         with closing(self.storage.connect()) as conn:
-            with conn.cursor() as cursor:
+            with closing(conn.cursor()) as cursor:
                 cursor.adbc_ingest(self.table_name, table, mode="append")
             conn.commit()
 
@@ -565,7 +565,7 @@ class SQLAdapter(Adapter[TableStructure]):
             query += " ORDER BY " + ", ".join(order_by)
 
         with closing(self.storage.connect()) as conn:
-            with conn.cursor() as cursor:
+            with closing(conn.cursor()) as cursor:
                 cursor.execute(query)
                 data = cursor.fetch_arrow_table()
             conn.commit()

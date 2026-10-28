@@ -45,20 +45,22 @@ def sub_paths(segments: tuple[str, ...]) -> Iterator[tuple[str, ...]]:
         yield segments[:i]
 
 
-def settings_customise_sources(
-    # Give env vars priority over config file.
-    # https://docs.pydantic.dev/latest/concepts/pydantic_settings/#changing-priority
-    cls,
-    settings_cls: type[BaseSettings],
-    init_settings: PydanticBaseSettingsSource,
-    env_settings: PydanticBaseSettingsSource,
-    dotenv_settings: PydanticBaseSettingsSource,
-    file_secret_settings: PydanticBaseSettingsSource,
-) -> tuple[PydanticBaseSettingsSource, ...]:
-    return env_settings, init_settings, file_secret_settings
+class _Settings(BaseSettings):
+    @classmethod
+    def settings_customise_sources(
+        # Give env vars priority over config file.
+        # https://docs.pydantic.dev/latest/concepts/pydantic_settings/#changing-priority
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return env_settings, init_settings, file_secret_settings
 
 
-class CatalogConfig(BaseSettings):
+class CatalogConfig(_Settings):
     uri: str
     metadata: Optional[dict] = None
     specs: Optional[list[Spec]] = None
@@ -74,11 +76,10 @@ class CatalogConfig(BaseSettings):
     storage_max_overflow: int = 10
 
     model_config = SettingsConfigDict(env_prefix="TILED_CATALOG_")
-    settings_customise_sources = classmethod(settings_customise_sources)
 
 
 class TreeSpec(BaseModel):
-    tree_type: Annotated[EntryPointString, Field(alias="tree")]
+    tree_type: EntryPointString = Field(alias="tree")
     path: str
     args: Optional[dict[str, Any]] = None
 
@@ -141,7 +142,7 @@ class TiledAdmin(BaseModel):
     id: str
 
 
-class Authentication(BaseSettings):
+class Authentication(_Settings):
     # Defaults are all left as None to differentiate between unset and set to the default
     providers: Optional[list[AuthenticationProviderSpec]] = None
     tiled_admins: Optional[list[TiledAdmin]] = None
@@ -188,10 +189,9 @@ class Authentication(BaseSettings):
         return self
 
     model_config = SettingsConfigDict(env_prefix="TILED_AUTHN")
-    settings_customise_sources = classmethod(settings_customise_sources)
 
 
-class Database(BaseSettings):
+class Database(_Settings):
     uri: Optional[str] = None
     init_if_not_exists: Optional[bool] = None
     pool_pre_ping: Optional[bool] = None
@@ -199,10 +199,9 @@ class Database(BaseSettings):
     max_overflow: Optional[int] = 10
 
     model_config = SettingsConfigDict(env_prefix="TILED_AUTHN_DATABASSE")
-    settings_customise_sources = classmethod(settings_customise_sources)
 
 
-class AccessControl(BaseSettings):
+class AccessControl(_Settings):
     access_policy: EntryPointString
     args: Optional[dict[str, Any]]
 
@@ -210,25 +209,22 @@ class AccessControl(BaseSettings):
         return self.access_policy(**(self.args or {}))
 
     model_config = SettingsConfigDict(env_prefix="TILED_ACCESS_CONTROL")
-    settings_customise_sources = classmethod(settings_customise_sources)
 
 
-class MetricsConfig(BaseSettings):
+class MetricsConfig(_Settings):
     prometheus: bool = True
 
     model_config = SettingsConfigDict(env_prefix="TILED_METRICS")
-    settings_customise_sources = classmethod(settings_customise_sources)
 
 
-class ValidationSpec(BaseSettings):
+class ValidationSpec(_Settings):
     spec: str
     validator: Optional[EntryPointString] = None
 
     model_config = SettingsConfigDict(env_prefix="TILED_VALIDATORS")
-    settings_customise_sources = classmethod(settings_customise_sources)
 
 
-class StreamingCacheConfig(BaseSettings):
+class StreamingCacheConfig(_Settings):
     # A single standalone node: ``redis://`` / ``rediss://`` / ``memory``.
     uri: Optional[str] = None
     # Or a Redis Sentinel cluster: a list of ``"host:port"`` Sentinels plus
@@ -253,7 +249,6 @@ class StreamingCacheConfig(BaseSettings):
     health_check_interval: int = 10
 
     model_config = SettingsConfigDict(env_prefix="TILED_STREAMING_CACHE_")
-    settings_customise_sources = classmethod(settings_customise_sources)
 
     @model_validator(mode="after")
     def check_source(self) -> "StreamingCacheConfig":
@@ -307,7 +302,7 @@ class StreamingCacheConfig(BaseSettings):
         return self
 
 
-class WebhooksConfig(BaseSettings):
+class WebhooksConfig(_Settings):
     """Configuration for the optional webhooks feature.
 
     When this section is present in the server configuration, the
@@ -341,10 +336,9 @@ class WebhooksConfig(BaseSettings):
     allow_private_addresses: bool = False
 
     model_config = SettingsConfigDict(env_prefix="TILED_WEBHOOKS_")
-    settings_customise_sources = classmethod(settings_customise_sources)
 
 
-class Config(BaseSettings):
+class Config(_Settings):
     catalog: Optional[CatalogConfig] = None  # recommended
     trees: Optional[list[TreeSpec]] = None  # advanced alternative
     media_types: dict[str, dict[str, EntryPointString]] = {}
@@ -375,7 +369,6 @@ class Config(BaseSettings):
     storage_max_overflow: int = 10
 
     model_config = SettingsConfigDict(env_prefix="TILED_")
-    settings_customise_sources = classmethod(settings_customise_sources)
 
     @field_validator("access_policy")
     @classmethod
@@ -497,6 +490,7 @@ class Config(BaseSettings):
 
     @cached_property
     def merged_trees(self) -> Any:  # TODO: update when # 1047 is merged
+        assert self.trees is not None, "ensured by reconcile_catalog_and_trees"
         trees = {
             segments: tree
             for segments, tree in (tree_spec.tree_entry for tree_spec in self.trees)
@@ -528,6 +522,7 @@ class Config(BaseSettings):
         startup = []
         shutdown = []
         background = []
+        assert self.trees is not None, "ensured by reconcile_catalog_and_trees"
         for tree in self.trees:
             startup.extend(tree.startup_tasks)
             shutdown.extend(tree.shutdown_tasks)
