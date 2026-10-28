@@ -37,7 +37,9 @@ def project_form(
         if form.fields is None:
             fields = None
 
-        return form.copy(fields=fields, contents=contents)
+        # awkward is py.typed but leaves copy()'s parameters unannotated, so
+        # pyright infers their type from the UNSET default (here and below).
+        return form.copy(fields=fields, contents=contents)  # pyright: ignore[reportArgumentType]
 
     elif isinstance(form, awkward.forms.UnionForm):
         step1 = [project_form(x, form_keys_touched) for x in form.contents]
@@ -68,13 +70,26 @@ def project_form(
             return None
 
     elif isinstance(form, (awkward.forms.RegularForm, awkward.forms.UnmaskedForm)):
-        return form.copy(content=project_form(form.content, form_keys_touched))
+        return form.copy(content=project_form(form.content, form_keys_touched))  # pyright: ignore[reportArgumentType]
 
     elif isinstance(form, awkward.forms.EmptyForm):
         return form.copy()
 
-    else:
+    elif isinstance(
+        form,
+        (
+            awkward.forms.ListOffsetForm,
+            awkward.forms.ListForm,
+            awkward.forms.IndexedForm,
+            awkward.forms.IndexedOptionForm,
+            awkward.forms.ByteMaskedForm,
+            awkward.forms.BitMaskedForm,
+        ),
+    ):
         if form.form_key in form_keys_touched:
-            return form.copy(content=project_form(form.content, form_keys_touched))
+            return form.copy(content=project_form(form.content, form_keys_touched))  # pyright: ignore[reportArgumentType]
         else:
             return None
+
+    else:
+        raise TypeError(f"Unsupported awkward form: {type(form).__name__}")
