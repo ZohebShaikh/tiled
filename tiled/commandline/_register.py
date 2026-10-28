@@ -109,8 +109,8 @@ def register(
             raise ValueError(
                 f"Failed parsing --ext option {item}, expected format '.ext=mimetype'"
             )
-        ext, mimetype = match.groups()
-        mimetypes_by_file_ext[ext] = mimetype
+        file_ext, mimetype = match.groups()
+        mimetypes_by_file_ext[file_ext] = mimetype
     adapters_by_mimetype = {}
     ADAPTER_PATTERN = re.compile(r"(.*) *= *(.*)")
     for item in adapters or []:

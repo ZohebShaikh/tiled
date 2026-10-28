@@ -2617,14 +2617,14 @@ def delete_physical_asset(
         if (table_name is not None) and (dataset_id is not None):
             storage = cast(SQLStorage, get_storage(data_uri))
             with closing(storage.connect()) as conn:
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     cursor.execute(
                         f'DELETE FROM "{table_name}" WHERE _dataset_id = {dataset_id:d};',
                     )
                 conn.commit()
 
                 # If the table is empty, we can drop it
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     cursor.execute(f'SELECT COUNT(*) FROM "{table_name}";')
                     row = cursor.fetchone()
                     if row is not None and row[0] == 0:

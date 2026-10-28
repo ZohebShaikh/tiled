@@ -35,7 +35,7 @@ class QueryRegistry:
     def query_type_to_name(self) -> DictView[Any, Any]:
         return DictView(self._query_type_to_name)
 
-    def register(self, name=None, overwrite=False, must_revalidate=True):
+    def register(self, name: str, overwrite=False, must_revalidate=True):
         """
         Register a new type of query.
         """
