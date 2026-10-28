@@ -3,7 +3,8 @@ import builtins
 import itertools
 import math
 import re
-from typing import Iterable, Optional, Union
+from collections.abc import Iterable
+from typing import Union
 
 from ndindex import ndindex
 
@@ -29,7 +30,7 @@ def merge_slices(*args: Union["NDSlice", "NDBlock"]) -> Union["NDSlice", "NDBloc
 
     # Loop over dimensions and check if they can be merged
     already_merged, result = False, []
-    for dim in zip(*args):
+    for dim in zip(*args, strict=False):
         # Ellipsis at the same position can be merged
         if all(map(is_ellipsis, dim)):
             result.append(Ellipsis)
@@ -62,10 +63,10 @@ def merge_slices(*args: Union["NDSlice", "NDBlock"]) -> Union["NDSlice", "NDBloc
 
         # Now we have only slices and can check for contiguity and compatibility
         if all(isinstance(d, builtins.slice) for d in dim):
-            starts = set(d.start or 0 for d in dim)
-            stops = set(d.stop for d in dim)
+            starts = {d.start or 0 for d in dim}
+            stops = {d.stop for d in dim}
 
-            if len(set(d.step or 1 for d in dim)) != 1:
+            if len({d.step or 1 for d in dim}) != 1:
                 raise ValueError("Slice dimensions must have the same step")
 
             elif len(starts) == 1 and len(stops) == 1:
@@ -115,7 +116,7 @@ def _num_steps(slc: builtins.slice) -> int:
     return len(range(start, stop, step))
 
 
-def split_1d(start, stop, step, max_len: int, pref_splits: Optional[list[int]] = None):
+def split_1d(start, stop, step, max_len: int, pref_splits: list[int] | None = None):
     """Split a 1D slice into sub-slices that do not exceed max_len steps.
 
     Splits are chosen close to the ideal equal partition. If preferred
@@ -168,7 +169,7 @@ def split_1d(start, stop, step, max_len: int, pref_splits: Optional[list[int]] =
 
 
 def split_slice(
-    arr_slice: "NDSlice", max_size: int, pref_splits: Optional[list[list[int]]] = None
+    arr_slice: "NDSlice", max_size: int, pref_splits: list[list[int]] | None = None
 ) -> dict[tuple[int, ...], "NDSlice"]:
     """Split an N-dimensional slice into smaller slices that do not exceed max_size
 
@@ -205,7 +206,7 @@ def split_slice(
                 for x in bnd
                 if x in range(slc.start, slc.stop, slc.step or 1) and x != slc.start
             ]
-            for bnd, slc in zip(pref_splits, arr_slice)
+            for bnd, slc in zip(pref_splits, arr_slice, strict=False)
         ]
 
     # Start with the most chunked or longest dimension and subslice it
@@ -238,7 +239,10 @@ def split_slice(
             break
 
     # Replace (squeeze) any singleton slices if they were integers originally
-    result = [[res[0].start] if flag else res for res, flag in zip(result, is_int_dim)]
+    result = [
+        [res[0].start] if flag else res
+        for res, flag in zip(result, is_int_dim, strict=False)
+    ]
 
     # Form the dict of Cartesian products
     keys = itertools.product(
@@ -246,7 +250,7 @@ def split_slice(
     )
     vals = itertools.product(*result)
 
-    return {k: NDSlice(v) for k, v in zip(keys, vals)}
+    return {k: NDSlice(v) for k, v in zip(keys, vals, strict=False)}
 
 
 def _slc_with_int(slc: builtins.slice, idx: int) -> int:
@@ -298,9 +302,7 @@ def _slc_with_slc(slc1: builtins.slice, slc2: builtins.slice) -> builtins.slice:
     return builtins.slice(new_start, new_stop, new_step)
 
 
-def _is_scalar_slice(
-    slc: Union[int, builtins.slice], length: Optional[int] = None
-) -> bool:
+def _is_scalar_slice(slc: int | builtins.slice, length: int | None = None) -> bool:
     "Best effort to check if a slice selects a single element (scalar) along one dimension"
     if length is not None and isinstance(slc, builtins.slice):
         start, stop, step = slc.indices(length)
@@ -406,11 +408,11 @@ class NDSlice(tuple):
     """
 
     def __new__(
-        cls, *args: Union[int, builtins.slice, EllipsisType, Iterable, None]
+        cls, *args: int | builtins.slice | EllipsisType | Iterable | None
     ) -> "NDSlice":
-        if len(args) == 1 and (isinstance(args[0], (tuple, list)) or args[0] is None):
+        if len(args) == 1 and (isinstance(args[0], tuple | list) or args[0] is None):
             return cls(*(args[0] or ()))
-        if any(not isinstance(s, (int, builtins.slice, EllipsisType)) for s in args):
+        if any(not isinstance(s, int | builtins.slice | EllipsisType) for s in args):
             raise TypeError(
                 f"NDSlice expected int, slice or Ellipsis; got {args} instead. Use "
                 "NDSlice.from_numpy_str() or NDSlice.from_json() to parse strings or JSON."
@@ -463,7 +465,7 @@ class NDSlice(tuple):
                 raise ValueError("Can not initialize NDSlice from %s", s)
         return cls(*result)
 
-    def to_json(self, ndim: Optional[int] = None) -> list[JSON]:
+    def to_json(self, ndim: int | None = None) -> list[JSON]:
         "Convert NDSlice into a JSON-serializable representation"
         if not ndim and (Ellipsis in self) and self[-1] != Ellipsis:
             raise ValueError(
@@ -476,7 +478,7 @@ class NDSlice(tuple):
             )
         ndim = ndim or len(self)
 
-        def convert_dimension(slc: Union[int, builtins.slice]) -> JSON:
+        def convert_dimension(slc: int | builtins.slice) -> JSON:
             if isinstance(slc, builtins.slice):
                 return (
                     ({} if slc.start is None else {"start": slc.start})
@@ -632,7 +634,7 @@ class NDSlice(tuple):
     def is_scalar(self, shape: tuple[int, ...]) -> bool:
         "Check if this NDSlice selects a single element (scalar) from an array of the given shape"
         return (len(self) == len(shape)) and all(
-            _is_scalar_slice(s, length=n) for s, n in zip(self, shape)
+            _is_scalar_slice(s, length=n) for s, n in zip(self, shape, strict=False)
         )
 
 
@@ -643,7 +645,7 @@ class NDBlock(NDSlice):
     i.e. the `step` parameter along each dimension, if specified, must be 1.
     """
 
-    def __new__(cls, *args: Union[int, builtins.slice, EllipsisType]) -> "NDBlock":
+    def __new__(cls, *args: int | builtins.slice | EllipsisType) -> "NDBlock":
         inst = super().__new__(cls, *args)
 
         for s in inst:
@@ -657,14 +659,14 @@ class NDBlock(NDSlice):
     def shape_from_chunks(self, chunks: Chunks) -> tuple[int, ...]:
         "Find the shape of the block of chunks for an array with the given chunks"
         expanded = self.expand_for_shape(tuple(map(len, chunks)))
-        selected = tuple(ch[sl] for ch, sl in zip(chunks, expanded))
+        selected = tuple(ch[sl] for ch, sl in zip(chunks, expanded, strict=False))
         return tuple(sum(ch) if isinstance(ch, tuple) else ch for ch in selected)
 
     def slice_from_chunks(self, chunks: Chunks) -> NDSlice:
         "Find the slice over entire array with given chunks that selects this block"
         expanded = self.expand_for_shape(tuple(map(len, chunks)))
         slice_ = []
-        for sl, ch in zip(expanded, chunks):
+        for sl, ch in zip(expanded, chunks, strict=False):
             if isinstance(sl, int):
                 start = sum(ch[:sl])
                 slice_.append(slice(start, start + ch[sl]))
@@ -711,7 +713,7 @@ class NDBlock(NDSlice):
 
 
 def block_for_slice(
-    chunks: Chunks, slice: Optional[Union[tuple, "NDSlice"]] = None
+    chunks: Chunks, slice: Union[tuple, "NDSlice"] | None = None
 ) -> tuple["NDBlock", "NDSlice"]:
     """Convert a slice on a chunked array into block indices and a slice within the block
 
@@ -754,7 +756,7 @@ def block_for_slice(
 
     # For each dimension, determine which chunks are touched and how to slice concatenated blocks
     block_slices, adjusted_slices = [], []
-    for dim_idx, (slc, dim_chunks) in enumerate(zip(slice, chunks)):
+    for dim_idx, (slc, dim_chunks) in enumerate(zip(slice, chunks, strict=False)):
         # Compute chunk boundaries: [0, chunks[0], chunks[0]+chunks[1], ...]
         chunk_bounds = [0, *itertools.accumulate(dim_chunks)]
 

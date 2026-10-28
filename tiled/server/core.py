@@ -7,9 +7,9 @@ import re
 import sys
 import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from hashlib import md5
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import anyio
 import dateutil.tz
@@ -221,7 +221,7 @@ async def construct_entries_response(
     omit_links,
     include_data_sources,
     filters,
-    sorting: Optional[list[tuple[str, Literal[1, -1]]]],
+    sorting: list[tuple[str, Literal[1, -1]]] | None,
     base_url,
     media_type,
     max_depth,
@@ -291,7 +291,7 @@ async def construct_entries_response(
     links = pagination_links(base_url, route, path_parts, page, next_cursor, count)
 
     # This value will not leak out. It just used to seed comparisons.
-    metadata_stale_at = datetime.now(timezone.utc) + timedelta(days=1_000_000)
+    metadata_stale_at = datetime.now(UTC) + timedelta(days=1_000_000)
     must_revalidate = getattr(tree, "must_revalidate", True)
     data = []
     for key, entry in items:
@@ -494,7 +494,7 @@ async def construct_resource(
     id_ = path_parts[-1] if path_parts else ""
     attributes = {"ancestors": path_parts[:-1]}
     if include_data_sources and hasattr(entry, "data_sources"):
-        if callable(getattr(entry, "data_sources")):
+        if callable(entry.data_sources):
             # Catalog adapters expose `data_sources(include_assets=...)`; the
             # assets are loaded only when the client asked to include data
             # sources (they are otherwise omitted for large file sequences).
@@ -668,7 +668,7 @@ def _fallback_msgpack_encoder(obj):
     if "numpy" in sys.modules:
         import numpy
 
-        if isinstance(obj, (numpy.generic, numpy.ndarray)):
+        if isinstance(obj, numpy.generic | numpy.ndarray):
             if numpy.isscalar(obj):
                 return obj.item()
             return obj.tolist()
@@ -783,7 +783,7 @@ def get_websocket_envelope_formatter(
         async def stream_msgpack(
             websocket: WebSocket,
             metadata: dict,
-            payload_bytes: Optional[bytes],
+            payload_bytes: bytes | None,
         ):
             if payload_bytes is not None:
                 metadata["payload"] = payload_bytes
@@ -797,7 +797,7 @@ def get_websocket_envelope_formatter(
         async def stream_json(
             websocket: WebSocket,
             metadata: dict,
-            payload_bytes: Optional[bytes],
+            payload_bytes: bytes | None,
         ):
             if payload_bytes is not None:
                 media_type = metadata.get("mimetype") or metadata.get(

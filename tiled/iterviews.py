@@ -193,7 +193,7 @@ class ValuesView(IterViewBase):
             )
 
     def __iter__(self):
-        for key, value in self._items_slice(0, None, 1, self._page_size):
+        for _key, value in self._items_slice(0, None, 1, self._page_size):
             yield value
 
 

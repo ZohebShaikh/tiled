@@ -1,16 +1,9 @@
 from __future__ import annotations
 
-import sys
-
-if sys.version_info >= (3, 11):
-    from typing import Self
-else:
-    from typing_extensions import Self
-
 import copy
 from collections.abc import Set
 from contextlib import closing
-from typing import Any
+from typing import Any, Self
 
 import adbc_driver_manager
 import awkward
@@ -241,7 +234,7 @@ class RaggedSQLAdapter(Adapter[RaggedStructure]):
         selected_lengths = [chunks0[i] for i in chunk_indexes]
         awk_arrays = [
             awkward.from_buffers(form, length, buffer)
-            for length, buffer in zip(selected_lengths, buffers)
+            for length, buffer in zip(selected_lengths, buffers, strict=False)
         ]
 
         return make_ragged_array(awkward.concatenate(awk_arrays), slice=slc)

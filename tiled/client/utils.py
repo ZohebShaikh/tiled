@@ -8,7 +8,6 @@ from collections.abc import Hashable
 from dataclasses import asdict
 from pathlib import Path
 from threading import Lock
-from typing import Optional, Union
 from urllib.parse import parse_qs, urlparse
 from weakref import WeakValueDictionary
 
@@ -179,7 +178,7 @@ def should_retry_if_unprocessed(exception: Exception) -> "bool | float":
             return True
         return False
     return isinstance(
-        exception, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
+        exception, httpx.ConnectError | httpx.ConnectTimeout | httpx.PoolTimeout
     )
 
 
@@ -293,7 +292,7 @@ def retry_context(context=None, *, on=None):
 
 def should_poll_for_tokens(exception: Exception) -> bool:
     # Retry on transient network errors during device flow polling.
-    if isinstance(exception, (httpx.ConnectError, httpx.TimeoutException)):
+    if isinstance(exception, httpx.ConnectError | httpx.TimeoutException):
         return True
     return False
 
@@ -350,7 +349,7 @@ def export_util(file, format, get, link, params):
         raise ValueError("params may not include 'format'. Use the format parameter.")
     if isinstance(format, str) and format.startswith("."):
         format = format[1:]  # e.g. ".csv" -> "csv"
-    if isinstance(file, (str, Path)):
+    if isinstance(file, str | Path):
         # Infer that `file` is a filepath.
         if format is None:
             format = ".".join(
@@ -440,7 +439,7 @@ def params_from_slice(slice):
     "Generate URL query param ?slice=... from Python slice object."
     params = {}
     if (slice is not None) and (slice is not ...):
-        if isinstance(slice, (int, builtins.slice)):
+        if isinstance(slice, int | builtins.slice):
             slice = [slice]
         slices = []
         for dim in slice:
@@ -454,11 +453,9 @@ def params_from_slice(slice):
                         "Slices with a 'step' other than 1 are not supported."
                     )
                 slices.append(
-                    (
-                        (str(dim.start) if dim.start else "")
-                        + ":"
-                        + (str(dim.stop) if dim.stop else "")
-                    )
+                    (str(dim.start) if dim.start else "")
+                    + ":"
+                    + (str(dim.stop) if dim.stop else "")
                 )
             else:
                 slices.append(str(int(dim)))
@@ -568,8 +565,8 @@ def chunks_repr(chunks: Chunks) -> str:
 
 
 def normalize_specs(
-    specs: Optional[Union[list[str], list[Spec], str]],
-) -> Optional[list[dict[str, str]]]:
+    specs: list[str] | list[Spec] | str | None,
+) -> list[dict[str, str]] | None:
     "Represent a list of Spec objects or strings as a list of dicts"
 
     if specs is None:

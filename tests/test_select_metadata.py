@@ -34,5 +34,5 @@ def test_select_metadata(client):
     # /search
     response = http_client.get("/api/v1/search/?select_metadata=[sample.color]")
     result = response.json()
-    for item, color in zip(result["data"], ["red", "blue"]):
+    for item, color in zip(result["data"], ["red", "blue"], strict=False):
         assert item["attributes"]["metadata"] == {"selected": [color]}

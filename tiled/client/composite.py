@@ -1,7 +1,8 @@
 import itertools as it
 import time
 import warnings
-from typing import TYPE_CHECKING, Iterable, Optional, Union
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlparse
 
 from ..structures.core import StructureFamily
@@ -44,7 +45,7 @@ class CompositeClient(Container):
     @property
     def _flat_keys_mapping(self):
         result = {}
-        for key, item in self.get_contents().items():
+        for _key, item in self.get_contents().items():
             if item["attributes"]["structure_family"] == StructureFamily.table:
                 for col in item["attributes"]["structure"]["columns"]:
                     result[col] = item["id"] + "/" + col
@@ -108,7 +109,7 @@ class CompositeClient(Container):
 
     def delete_contents(
         self,
-        keys: Optional[Union[str, Iterable[str]]] = None,
+        keys: str | Iterable[str] | None = None,
         external_only: bool = True,
     ) -> "CompositeClient":
         """Delete the contents of this Composite node.
@@ -232,7 +233,8 @@ class CompositeClient(Container):
                             data_vars[part] = ragged_to_dense(array)
                             warnings.warn(
                                 f"Failed to convert ragged array to numpy: {e}. "
-                                "Returning as a dense array padded with NaNs."
+                                "Returning as a dense array padded with NaNs.",
+                                stacklevel=2,
                             )
                 elif item["attributes"]["structure_family"] == StructureFamily.table:
                     # For now, greedily load tabular data. We cannot know the shape
@@ -258,13 +260,11 @@ class CompositeClient(Container):
         # Create xarray.Dataset from the data_vars dictionary
         is_dim0_consistent = (
             len(
-                set(
-                    [
-                        arr.shape[0]
-                        for var_name, arr in data_vars.items()
-                        if arr.ndim > 0 and not array_dims.get(var_name)
-                    ]
-                )
+                {
+                    arr.shape[0]
+                    for var_name, arr in data_vars.items()
+                    if arr.ndim > 0 and not array_dims.get(var_name)
+                }
             )
             <= 1
         )
@@ -323,7 +323,7 @@ class CompositeClient(Container):
         metadata=None,
         specs=None,
         access_tags=None,
-        table_name: Optional[str] = None,
+        table_name: str | None = None,
     ):
         if set(self.keys()).intersection(schema.names):
             raise ValueError(

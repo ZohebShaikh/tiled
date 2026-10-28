@@ -667,7 +667,7 @@ def test_chunking(client, i: int):
 
     divisions = np.cumsum((0, *rac.chunks[0]))
     starts, stops = divisions[:-1], divisions[1:]
-    for j, (start, stop) in enumerate(zip(starts, stops, strict=True)):
+    for _j, (start, stop) in enumerate(zip(starts, stops, strict=True)):
         part = rac.read(slice=(builtins.slice(start, stop),))
         assert ak.array_equal(part._impl, array[start:stop]._impl)
 

@@ -17,7 +17,8 @@ import asyncio
 import ipaddress
 import logging
 import socket
-from typing import Callable, Coroutine, Optional
+from collections.abc import Callable, Coroutine
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Security
 from sqlalchemy import select
@@ -223,11 +224,14 @@ def get_webhook_router(
         request: Request,
         path: str,
         body: WebhookRegistrationRequest,
-        principal: Optional[Principal] = Depends(get_current_principal),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
-        authn_scopes: Scopes = Depends(get_current_scopes),
+        principal: Annotated[Principal | None, Depends(get_current_principal)],
+        authn_access_tags: Annotated[
+            AccessTags | None, Depends(get_current_access_tags)
+        ],
+        authn_scopes: Annotated[Scopes, Depends(get_current_scopes)],
+        *,
         root_tree=Depends(get_root_tree),
-        session_state: dict = Depends(get_session_state),
+        session_state: Annotated[dict, Depends(get_session_state)],
         _=Security(check_scopes, scopes=["write:webhooks"]),
     ):
         entry = await get_entry(
@@ -246,7 +250,7 @@ def get_webhook_router(
 
         await webhook_url_validator(body)
 
-        encrypted_secret: Optional[str] = None
+        encrypted_secret: str | None = None
         if body.secret:
             # Use the same key source as the dispatcher (webhooks.secret_keys
             # from config, injected into the catalog context at startup).
@@ -284,11 +288,14 @@ def get_webhook_router(
     async def list_webhooks(
         request: Request,
         path: str,
-        principal: Optional[Principal] = Depends(get_current_principal),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
-        authn_scopes: Scopes = Depends(get_current_scopes),
+        principal: Annotated[Principal | None, Depends(get_current_principal)],
+        authn_access_tags: Annotated[
+            AccessTags | None, Depends(get_current_access_tags)
+        ],
+        authn_scopes: Annotated[Scopes, Depends(get_current_scopes)],
+        *,
         root_tree=Depends(get_root_tree),
-        session_state: dict = Depends(get_session_state),
+        session_state: Annotated[dict, Depends(get_session_state)],
         _=Security(check_scopes, scopes=["read:webhooks"]),
     ):
         entry = await get_entry(
@@ -320,11 +327,14 @@ def get_webhook_router(
     async def delete_webhook(
         request: Request,
         webhook_id: int,
-        principal: Optional[Principal] = Depends(get_current_principal),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
-        authn_scopes: Scopes = Depends(get_current_scopes),
+        principal: Annotated[Principal | None, Depends(get_current_principal)],
+        authn_access_tags: Annotated[
+            AccessTags | None, Depends(get_current_access_tags)
+        ],
+        authn_scopes: Annotated[Scopes, Depends(get_current_scopes)],
+        *,
         root_tree=Depends(get_root_tree),
-        session_state: dict = Depends(get_session_state),
+        session_state: Annotated[dict, Depends(get_session_state)],
         _=Security(check_scopes, scopes=["write:webhooks"]),
     ):
         # Locate the catalog that owns this webhook (supports catalogs mounted
@@ -364,12 +374,15 @@ def get_webhook_router(
     async def webhook_history(
         request: Request,
         webhook_id: int,
-        limit: int = Query(50, ge=1, le=500),
-        principal: Optional[Principal] = Depends(get_current_principal),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
-        authn_scopes: Scopes = Depends(get_current_scopes),
+        *,
+        limit: Annotated[int, Query(ge=1, le=500)] = 50,
+        principal: Annotated[Principal | None, Depends(get_current_principal)],
+        authn_access_tags: Annotated[
+            AccessTags | None, Depends(get_current_access_tags)
+        ],
+        authn_scopes: Annotated[Scopes, Depends(get_current_scopes)],
         root_tree=Depends(get_root_tree),
-        session_state: dict = Depends(get_session_state),
+        session_state: Annotated[dict, Depends(get_session_state)],
         _=Security(check_scopes, scopes=["read:webhooks"]),
     ):
         # Locate the catalog that owns this webhook (supports catalogs mounted

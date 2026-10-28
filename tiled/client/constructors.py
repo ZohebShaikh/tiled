@@ -3,7 +3,6 @@ import collections.abc
 import pathlib
 import threading
 import warnings
-from typing import Optional, Union
 from urllib.parse import parse_qs, urlparse
 
 import httpx2 as httpx
@@ -28,8 +27,8 @@ def from_uri(
     headers=None,
     timeout=None,
     include_data_sources=False,
-    auth: Optional[httpx.Auth] = None,
-    cookies: Optional[httpx.Cookies | dict] = None,
+    auth: httpx.Auth | None = None,
+    cookies: httpx.Cookies | dict | None = None,
     max_connections: int = MAX_CONCURRENT_CONNECTIONS,
     show_progress=None,
     trust_env=True,
@@ -87,15 +86,20 @@ Or, call login() to manually login.
 For non-interactive authentication, use an API key or add custom auth
 """
     if username is not None:
-        warnings.warn("Tiled no longer accepts 'username' parameter. " + EXPLAIN_LOGIN)
+        warnings.warn(
+            "Tiled no longer accepts 'username' parameter. " + EXPLAIN_LOGIN,
+            stacklevel=2,
+        )
     if auth_provider is not None:
         warnings.warn(
-            "Tiled no longer accepts 'auth_provider' parameter. " + EXPLAIN_LOGIN
+            "Tiled no longer accepts 'auth_provider' parameter. " + EXPLAIN_LOGIN,
+            stacklevel=2,
         )
     if prompt_for_reauthentication is not None:
         warnings.warn(
             "Tiled no longer accepts 'prompt_for_reauthentication' parameter. "
-            + EXPLAIN_LOGIN
+            + EXPLAIN_LOGIN,
+            stacklevel=2,
         )
     context, node_path_parts = Context.from_any_uri(
         uri,
@@ -286,10 +290,10 @@ def from_profile(name, structure_clients=None, **kwargs):
 
 
 def simple(
-    directory: Optional[Union[str, pathlib.Path]] = None,
-    api_key: Optional[str] = None,
+    directory: str | pathlib.Path | None = None,
+    api_key: str | None = None,
     port: int = 0,
-    readable_storage: Optional[Union[str, pathlib.Path]] = None,
+    readable_storage: str | pathlib.Path | None = None,
     quiet: bool = False,
 ):
     """

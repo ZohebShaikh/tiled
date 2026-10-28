@@ -302,7 +302,7 @@ def test_subscribe_to_container(
         sub.child_created.add_callback(child_created_cb)
         sub.child_metadata_updated.add_callback(child_metadata_updated_cb)
         uploaded_nodes = []
-        for i in range(3):
+        for _i in range(3):
             # This is exposing fragility in SQLite database connection handling.
             # Once that is resolved, remove the sleep.
             time.sleep(0.1)
@@ -310,7 +310,9 @@ def test_subscribe_to_container(
             uploaded_nodes.append(client.create_container(unique_key))
         assert created_3.wait(timeout=10.0), "Timeout waiting for messages"
         downloaded_nodes = list(client.values())
-        for up, streamed, down in zip(uploaded_nodes, streamed_nodes, downloaded_nodes):
+        for _up, _streamed, _down in zip(
+            uploaded_nodes, streamed_nodes, downloaded_nodes, strict=False
+        ):
             pass
             # TODO Make this equality exact. It's close.
             # assert up.item == streamed.item == down.item

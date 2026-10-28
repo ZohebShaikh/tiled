@@ -12,7 +12,7 @@ keys = list(string.ascii_lowercase)
 tree = MapAdapter(
     {
         letter: ArrayAdapter.from_array(number * numpy.ones(10))
-        for letter, number in zip(keys, range(26))
+        for letter, number in zip(keys, range(26), strict=False)
     }
 )
 empty_tree = MapAdapter({})

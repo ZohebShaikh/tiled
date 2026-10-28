@@ -24,7 +24,7 @@ async def as_dataset(node):
     else:
         items = node.items()
     for key, array_adapter in items:
-        spec_names = set(spec.name for spec in array_adapter.specs)
+        spec_names = {spec.name for spec in array_adapter.specs}
         arr = await ensure_awaitable(array_adapter.read)
         if "xarray_data_var" in spec_names:
             data_vars[key] = (array_adapter.structure().dims, arr)

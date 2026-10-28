@@ -9,19 +9,16 @@ import os
 import shutil
 import time
 import uuid
+from collections.abc import Callable
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import partial, reduce
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Dict,
-    List,
     Literal,
     Optional,
-    Union,
     cast,
 )
 from urllib.parse import urlparse
@@ -271,7 +268,7 @@ class Context:
         key_maker=lambda: str(uuid.uuid4()),
         storage_pool_size=5,
         storage_max_overflow=10,
-        webhook_secret_keys: Optional[List[str]] = None,
+        webhook_secret_keys: list[str] | None = None,
     ):
         self.engine = get_database_engine(database_settings)
         self.database_settings = database_settings
@@ -282,7 +279,7 @@ class Context:
         if isinstance(writable_storage, dict):
             writable_storage = list(writable_storage.values())
         # Back-compat: `writable_storage` used to be a filepath.
-        if isinstance(writable_storage, (str, Path)):
+        if isinstance(writable_storage, str | Path):
             writable_storage = [writable_storage]
         if isinstance(readable_storage, str):
             raise ValueError(
@@ -320,7 +317,7 @@ class Context:
         )
         self.adapters_by_mimetype = merged_adapters_by_mimetype
         self.cache_config = cache_config
-        self.webhook_secret_keys: List[str] = webhook_secret_keys or []
+        self.webhook_secret_keys: list[str] = webhook_secret_keys or []
         self.webhook_dispatcher = None
 
     def session(self):
@@ -405,11 +402,11 @@ class CatalogNodeAdapter:
         *,
         conditions=None,
         queries=None,
-        sorting: Optional[list[tuple[str, Literal[1, -1]]]] = None,
-        mount_path: Optional[list[str]] = None,
+        sorting: list[tuple[str, Literal[1, -1]]] | None = None,
+        mount_path: list[str] | None = None,
         create_mount_nodes_if_not_exist: bool = False,
         deep: bool = False,
-        max_depth: Optional[int] = None,
+        max_depth: int | None = None,
         access_filters=None,
     ):
         self.context = context
@@ -626,7 +623,7 @@ class CatalogNodeAdapter:
         async with self.context.session() as db:
             return (await db.execute(statement)).scalar_one()
 
-    async def approx_len(self) -> Optional[int]:
+    async def approx_len(self) -> int | None:
         """Get an approximate number of child nodes using table statistics.
 
         This only works for PostgreSQL databases and does not take into account
@@ -1124,7 +1121,7 @@ class CatalogNodeAdapter:
         elif self.context.engine.dialect.name == "postgresql":
             from sqlalchemy.dialects.postgresql import insert
         else:
-            assert False  # future-proofing
+            raise AssertionError()  # future-proofing
 
         return insert
 
@@ -1270,7 +1267,7 @@ class CatalogNodeAdapter:
                 # Include IDs assigned by database in response.
                 data_sources_with_ids = []
                 for data_source, data_source_orm in zip(
-                    data_sources, refreshed_node.data_sources
+                    data_sources, refreshed_node.data_sources, strict=False
                 ):
                     ds = data_source.model_copy()
                     ds.id = data_source_orm.id
@@ -1297,7 +1294,7 @@ class CatalogNodeAdapter:
             if self.context.webhook_dispatcher:
                 await self.context.webhook_dispatcher.dispatch(
                     ContainerChildCreatedEvent(
-                        timestamp=datetime.now(tz=timezone.utc),
+                        timestamp=datetime.now(tz=UTC),
                         key=key,
                         structure_family=structure_family,
                         specs=[spec.model_dump() for spec in (specs or [])],
@@ -1355,14 +1352,14 @@ class CatalogNodeAdapter:
         ).on_conflict_do_nothing(index_elements=["id"])
         async with self.context.session() as db:
             await db.execute(statement)
-            values = dict(
-                structure_family=data_source.structure_family,
-                mimetype=data_source.mimetype,
-                management=data_source.management,
-                parameters=data_source.parameters,
-                properties=data_source.properties,
-                structure_id=structure_id,
-            )
+            values = {
+                "structure_family": data_source.structure_family,
+                "mimetype": data_source.mimetype,
+                "management": data_source.management,
+                "parameters": data_source.parameters,
+                "properties": data_source.properties,
+                "structure_id": structure_id,
+            }
             result = await db.execute(
                 update(orm.DataSource)
                 .where(orm.DataSource.id == data_source.id)
@@ -1658,7 +1655,7 @@ class CatalogNodeAdapter:
                 deleted_asset_records = (await db.execute(deletable_assets_stmt)).all()
 
                 # Now delete the gathered assets, if any
-                if asset_ids := set(record[0] for record in deleted_asset_records):
+                if asset_ids := {record[0] for record in deleted_asset_records}:
                     await db.execute(
                         delete(orm.Asset).where(orm.Asset.id.in_(asset_ids))
                     )
@@ -1673,16 +1670,16 @@ class CatalogNodeAdapter:
 
         # Physical deletion -- outside database transaction
         # Delete assets backed by files and blobs written by Tiled
-        for asset_id, data_uri, is_directory, management in deleted_asset_records:
+        for _asset_id, data_uri, is_directory, management in deleted_asset_records:
             if management != Management.external:
                 delete_physical_asset(data_uri, is_directory=is_directory)
         # Delete storage database entries (management == writable, always)
-        for asset_id, data_uri, table_name, dataset_id in deleted_from_storage:
+        for _asset_id, data_uri, table_name, dataset_id in deleted_from_storage:
             delete_physical_asset(
                 data_uri, table_name=table_name, dataset_id=dataset_id
             )
 
-        return len(set(record[0] for record in deleted_asset_records))
+        return len({record[0] for record in deleted_asset_records})
 
     async def delete_asset(self, asset_id, external_only=True):
         """Dissociate a single Asset from this Node and delete it if unreferenced.
@@ -1908,7 +1905,7 @@ class CatalogNodeAdapter:
                     else (current.specs if not drop_revision else self.node.specs) or []
                 )
                 ev = ContainerChildMetadataUpdatedEvent(
-                    timestamp=datetime.now(tz=timezone.utc),
+                    timestamp=datetime.now(tz=UTC),
                     key=self.node.key,
                     specs=[spec.model_dump() for spec in effective_specs],
                     metadata=effective_metadata,
@@ -1926,7 +1923,7 @@ class CatalogNodeAdapter:
             segments = list(await self.path_segments())
             await self.context.webhook_dispatcher.dispatch(
                 StreamClosedEvent(
-                    timestamp=datetime.now(tz=timezone.utc),
+                    timestamp=datetime.now(tz=UTC),
                     key=self.node.key,
                     path=segments,
                 ),
@@ -1977,8 +1974,8 @@ class CatalogContainerAdapter(CatalogNodeAdapter):
 
     async def keys_page(
         self,
-        cursor: Optional[int] = None,
-        limit: Optional[int] = None,
+        cursor: int | None = None,
+        limit: int | None = None,
     ):
         """Return a page of keys and the cursor for the next page.
 
@@ -2029,7 +2026,7 @@ class CatalogContainerAdapter(CatalogNodeAdapter):
             return [relative_keys[row[1]] for row in rows], next_cursor
         return [row[0] for row in rows], next_cursor
 
-    async def keys_range(self, offset: int = 0, limit: Optional[int] = None):
+    async def keys_range(self, offset: int = 0, limit: int | None = None):
         """Return a list of keys, starting at `offset` up to `limit`.
 
         The server uses `keys_page()` internally for cursor-based pagination.
@@ -2062,8 +2059,8 @@ class CatalogContainerAdapter(CatalogNodeAdapter):
 
     async def items_page(
         self,
-        cursor: Optional[int] = None,
-        limit: Optional[int] = None,
+        cursor: int | None = None,
+        limit: int | None = None,
     ):
         """Return a page of (key, adapter) pairs and the cursor for the next page.
 
@@ -2124,7 +2121,7 @@ class CatalogContainerAdapter(CatalogNodeAdapter):
             next_cursor,
         )
 
-    async def items_range(self, offset: int = 0, limit: Optional[int] = None):
+    async def items_range(self, offset: int = 0, limit: int | None = None):
         """Return a list of (key, adapter) pairs, starting at `offset` up to `limit`.
 
         The server uses `items_page()` internally for cursor-based pagination.
@@ -2162,7 +2159,7 @@ class CatalogContainerAdapter(CatalogNodeAdapter):
             for node in nodes
         ]
 
-    async def cursor_for_offset(self, offset: int) -> Optional[int]:
+    async def cursor_for_offset(self, offset: int) -> int | None:
         """Return the id of the node just before the given offset, for cursor pagination.
 
         Returns None when cursor pagination is not applicable:
@@ -2202,7 +2199,7 @@ class CatalogContainerAdapter(CatalogNodeAdapter):
 
 
 class CatalogArrayAdapter(CatalogNodeAdapter):
-    async def _assets_recently_modified(self) -> Optional[bool]:
+    async def _assets_recently_modified(self) -> bool | None:
         """Report whether a backing asset was modified within the freshness window.
 
         Returns `True` if at least one backing asset was modified within
@@ -2723,10 +2720,10 @@ def specs(query, tree):
     attr = orm.Node.specs
     if dialect_name == "sqlite":
         # Construct the conditions for includes
-        for i, name in enumerate(query.include):
+        for _i, name in enumerate(query.include):
             conditions.append(attr.like(f'%{{"name":"{name}",%'))
         # Construct the conditions for excludes
-        for i, name in enumerate(query.exclude):
+        for _i, name in enumerate(query.exclude):
             conditions.append(not_(attr.like(f'%{{"name":"{name}",%')))
     elif dialect_name == "postgresql":
         if query.include:
@@ -2832,7 +2829,7 @@ def in_or_not_in_postgresql(query, tree, method):
     return tree.new_variation(conditions=tree.conditions + [condition])
 
 
-_IN_OR_NOT_IN_DIALECT_DISPATCH: Dict[str, Callable] = {
+_IN_OR_NOT_IN_DIALECT_DISPATCH: dict[str, Callable] = {
     "sqlite": in_or_not_in_sqlite,
     "postgresql": in_or_not_in_postgresql,
 }
@@ -2894,7 +2891,7 @@ def in_memory(
     adapters_by_mimetype=None,
     top_level_access_tags=None,
     cache_config=None,
-    webhook_secret_keys: Optional[List[str]] = None,
+    webhook_secret_keys: list[str] | None = None,
 ):
     if not named_memory:
         uri = "sqlite:///:memory:"
@@ -2998,10 +2995,10 @@ def from_uri(
     init_if_not_exists=False,
     adapters_by_mimetype=None,
     top_level_access_tags=None,
-    mount_node: Optional[Union[str, List[str]]] = None,
+    mount_node: str | list[str] | None = None,
     create_mount_nodes_if_not_exist=False,
     cache_config=None,
-    webhook_secret_keys: Optional[List[str]] = None,
+    webhook_secret_keys: list[str] | None = None,
     catalog_pool_size=5,
     storage_pool_size=5,
     catalog_max_overflow=10,

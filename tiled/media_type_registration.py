@@ -308,7 +308,7 @@ if modules_available("lz4"):
         try:
             return lz4_compress(data)
         except TypeError:
-            if isinstance(data, (memoryview, bytearray)):
+            if isinstance(data, memoryview | bytearray):
                 return lz4_compress(bytes(data))
             else:
                 raise
