@@ -79,11 +79,13 @@ class PaginationLinks(pydantic.BaseModel):
     last: str
 
 
-class EntryFields(enum.Enum):
+class EntryFields(str, enum.Enum):
+    # The str mixin lets callers pass plain strings and serialize members.
     metadata = "metadata"
     structure_family = "structure_family"
     structure = "structure"
-    count = "count"
+    # This member deliberately shadows str.count; "count" is an API field name.
+    count = "count"  # pyright: ignore[reportAssignmentType]
     sorting = "sorting"
     specs = "specs"
     data_sources = "data_sources"

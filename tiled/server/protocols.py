@@ -1,6 +1,14 @@
+import inspect
 from abc import ABC
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional, Protocol, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Optional,
+    Protocol,
+    TypeGuard,
+    runtime_checkable,
+)
 
 from fastapi import Request
 
@@ -48,6 +56,21 @@ class OAuth2Authorizer(Protocol):
     def authorization_endpoint(self) -> "httpx.URL": ...
 
     async def authenticate(self, request: Request) -> Optional[UserSessionState]: ...
+
+
+def is_oauth2_authorizer(obj: object) -> TypeGuard[OAuth2Authorizer]:
+    """
+    Like isinstance(obj, OAuth2Authorizer), but never evaluates properties.
+
+    On Python 3.11, isinstance() on a Protocol uses hasattr(), which would run
+    OIDCAuthenticator's cached properties and fetch the IdP's configuration
+    over the network at startup.
+    """
+    missing = object()
+    return all(
+        inspect.getattr_static(obj, name, missing) is not missing
+        for name in ("client_id", "authorization_endpoint", "authenticate")
+    )
 
 
 @runtime_checkable

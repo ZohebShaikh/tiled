@@ -327,7 +327,6 @@ class Context:
         # (1) Get the server_info.
         # (2) Let the server set the CSRF cookie.
         # https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html#double-submit-cookie
-        server_info = None
         server_info = retry_call(
             lambda: handle_error(
                 self.http_client.get(
@@ -340,7 +339,6 @@ class Context:
             ).json(),
             self,
         )
-        assert server_info is not None  # retry_context() always raises or succeeds
         self.server_info: About = TypeAdapter(About).validate_python(server_info)
         self.api_key = api_key  # property setter sets Authorization header
         self.admin = Admin(self)  # accessor for admin-related requests
@@ -733,13 +731,9 @@ class Context:
             probe_timeout = (
                 httpx.Timeout(**DEFAULT_TIMEOUT_PARAMS) if timeout is None else timeout
             )
-            response_from_http = None
             response_from_http = retry_call(
                 lambda: httpx.get(uri, timeout=probe_timeout, trust_env=trust_env),
             )
-            assert (
-                response_from_http is not None
-            )  # retry_context() always raises or succeeds
             if response_from_http.is_redirect:
                 redirect_uri = httpx.URL(response_from_http.headers["location"])
                 if redirect_uri.scheme == "https" and redirect_uri.host == uri.host:

@@ -127,6 +127,7 @@ from ..utils import (
     UNCHANGED,
     Conflicts,
     OneShotCachedMap,
+    ReadOnlyChainMap,
     Sentinel,
     UnsupportedQueryType,
     ensure_awaitable,
@@ -326,8 +327,8 @@ class Context:
             if isinstance(value, str):
                 adapters_by_mimetype[key] = import_object(value)
         # User-provided adapters take precedence over defaults.
-        merged_adapters_by_mimetype = (
-            DEFAULT_ADAPTERS_BY_MIMETYPE | adapters_by_mimetype
+        merged_adapters_by_mimetype = ReadOnlyChainMap(
+            adapters_by_mimetype, DEFAULT_ADAPTERS_BY_MIMETYPE
         )
         self.adapters_by_mimetype = merged_adapters_by_mimetype
         self.cache_config = cache_config

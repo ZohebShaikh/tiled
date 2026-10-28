@@ -74,6 +74,7 @@ from .protocols import (
     InternalAuthenticator,
     OAuth2Authorizer,
     UserSessionState,
+    is_oauth2_authorizer,
 )
 from .settings import Settings, get_settings
 from .utils import API_KEY_COOKIE_NAME, get_base_url
@@ -899,12 +900,18 @@ async def create_tokens_from_session(
     # But in order to enable UIs to display a sensible username we provide
     # this information alongside the tokens only when the session is first created.
     identity = (
-        await db.execute(
-            select(orm.Identity)
-            .filter(orm.Identity.principal == principal)
-            .filter(orm.Identity.provider == provider)
+        (
+            await db.execute(
+                select(orm.Identity)
+                .filter(orm.Identity.principal == principal)
+                .filter(orm.Identity.provider == provider)
+            )
         )
-    ).scalar_one()
+        .scalars()
+        .first()
+    )  # A principal may have several identities per provider.
+    # The session was created for a principal that logged in via `provider`.
+    assert identity is not None
     return {
         "access_token": access_token,
         "expires_in": settings.access_token_max_age.total_seconds(),
@@ -975,7 +982,7 @@ def add_external_routes(
             else:
                 return tokens
 
-    if isinstance(authenticator, OAuth2Authorizer):
+    if is_oauth2_authorizer(authenticator):
         _add_oidc_routes(router, provider, authenticator, templates)
 
 

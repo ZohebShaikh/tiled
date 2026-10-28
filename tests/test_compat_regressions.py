@@ -183,3 +183,105 @@ def test_keys_pagination_does_not_require_items_pagination():
 
     assert isinstance(KeysOnly(), KeysPaginatedAdapter)
     assert not isinstance(KeysOnly(), ItemsPaginatedAdapter)
+
+
+def test_oauth2_authorizer_check_does_not_evaluate_properties():
+    "On Python 3.11 isinstance() on a Protocol would run OIDC's network fetch."
+    from tiled.server.protocols import is_oauth2_authorizer
+
+    class LazyAuthenticator(CustomOAuth2Authenticator):
+        @property
+        def authorization_endpoint(self):
+            raise ConnectionError("IdP unreachable")
+
+    assert is_oauth2_authorizer(LazyAuthenticator())
+    assert not is_oauth2_authorizer(object())
+
+
+def test_websocket_recv_works_without_decode_keyword():
+    "websockets<13 has no recv(decode=...) and the dependency is unpinned."
+    from tiled.client.stream import _RegularWebsocketWrapper
+
+    class Websockets12Connection:
+        def recv(self, timeout=None):
+            return b"\x80"
+
+    wrapper = _RegularWebsocketWrapper(None, None)
+    wrapper._websocket = Websockets12Connection()
+    assert wrapper.recv(timeout=1) == b"\x80"
+
+
+def test_tokens_for_principal_with_two_identities_from_one_provider(tmp_path):
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+    from tiled.authn_database import orm
+    from tiled.authn_database.core import initialize_database
+    from tiled.server.authentication import (
+        create_session,
+        create_tokens_from_session,
+    )
+    from tiled.server.settings import Settings
+
+    async def run():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'a.db'}")
+        await initialize_database(engine)
+        settings = Settings()
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            session = await create_session(settings, db, "idp", "alice")
+            db.add(
+                orm.Identity(
+                    id="alice-alt", provider="idp", principal_id=session.principal_id
+                )
+            )
+            await db.commit()
+            session = await create_session(settings, db, "idp", "alice")
+            tokens = await create_tokens_from_session(settings, db, session, "idp")
+        await engine.dispose()
+        return tokens
+
+    assert asyncio.run(run())["identity"]["provider"] == "idp"
+
+
+def test_iterviews_keep_plain_iterable_semantics():
+    "Hashable, identity equality, and membership by iteration, as before."
+    from tiled.adapters.mapping import MapAdapter as _MapAdapter
+
+    lookups = []
+
+    class CountingMapAdapter(_MapAdapter):
+        def __getitem__(self, key):
+            lookups.append(key)
+            return super().__getitem__(key)
+
+    node = CountingMapAdapter({"a": MapAdapter({}), "b": MapAdapter({})})
+    keys, items = node.keys(), node.items()
+    assert {keys, items}  # hashable
+    assert keys != node.keys()
+    assert "b" in keys and "z" not in keys
+    assert "not-a-pair" not in items
+    assert lookups == []
+
+
+def test_adapter_registrations_after_catalog_creation_are_seen(tmp_path):
+    from tiled.catalog import in_memory
+    from tiled.catalog.adapter import DEFAULT_ADAPTERS_BY_MIMETYPE
+
+    catalog = in_memory(writable_storage=str(tmp_path))
+    mimetype = "application/x-test-late-registration"
+    DEFAULT_ADAPTERS_BY_MIMETYPE.set(mimetype, lambda: MapAdapter)
+    try:
+        assert catalog.context.adapters_by_mimetype[mimetype] is MapAdapter
+        assert mimetype in list(catalog.context.adapters_by_mimetype)
+    finally:
+        DEFAULT_ADAPTERS_BY_MIMETYPE.discard(mimetype)
+
+
+def test_entry_fields_accept_plain_strings():
+    import json
+
+    from tiled.server.schemas import EntryFields
+
+    assert EntryFields.metadata in ["metadata", "structure"]
+    assert json.dumps([EntryFields.count]) == '["count"]'

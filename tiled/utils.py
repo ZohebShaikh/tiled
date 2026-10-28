@@ -183,6 +183,30 @@ class DictView(collections.abc.Mapping[K, V], Generic[K, V]):
 # It is defined at module scope because namedtupled need to be defined at
 # module scope in order to be pickleable. It should only be used internally by
 # OneShotCachedMap below.
+class ReadOnlyChainMap(collections.abc.Mapping[K, V]):
+    """
+    A read-only collections.ChainMap.
+
+    Lookups search each map in turn, so later changes to any of them are seen.
+    Unlike ChainMap, this accepts read-only mappings such as OneShotCachedMap.
+    """
+
+    def __init__(self, *maps: collections.abc.Mapping[K, V]):
+        self.maps = maps
+
+    def __getitem__(self, key: K) -> V:
+        for mapping in self.maps:
+            if key in mapping:
+                return mapping[key]
+        raise KeyError(key)
+
+    def __iter__(self):
+        return iter(dict.fromkeys(key for mapping in self.maps for key in mapping))
+
+    def __len__(self):
+        return len(set().union(*self.maps))
+
+
 class _OneShotCachedMapWrapper(NamedTuple):
     func: Callable[[], Any]
 
@@ -220,12 +244,6 @@ class OneShotCachedMap(collections.abc.Mapping[K, V], Generic[K, V]):
                 "This requires a callable that return a value, not the value itself."
             )
         self.__mapping[key] = _OneShotCachedMapWrapper(value_factory)
-
-    def __or__(self, other: collections.abc.Mapping[K, V]) -> "OneShotCachedMap[K, V]":
-        "Overlay the values in other, keeping the not-yet-evaluated entries lazy."
-        merged: OneShotCachedMap[K, V] = OneShotCachedMap()
-        merged.__setstate__({**self.__mapping, **other})
-        return merged
 
     def discard(self, key: K):
         """

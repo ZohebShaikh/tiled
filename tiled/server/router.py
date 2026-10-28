@@ -721,14 +721,11 @@ def get_router(
             {StructureFamily.array, StructureFamily.sparse},
             getattr(request.app.state, "access_policy", None),
         )
-        if not (
+        # get_entry() has already checked this.
+        assert (
             entry.structure_family == StructureFamily.array
             or entry.structure_family == StructureFamily.sparse
-        ):
-            raise HTTPException(
-                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected structure family {entry.structure_family}",
-            )
+        )
         shape, chunks = entry.structure().shape, entry.structure().chunks
         ndim = len(shape)
 
@@ -864,14 +861,11 @@ def get_router(
             {StructureFamily.array, StructureFamily.sparse},
             getattr(request.app.state, "access_policy", None),
         )
-        if not (
+        # get_entry() has already checked this.
+        assert (
             entry.structure_family == StructureFamily.array
             or entry.structure_family == StructureFamily.sparse
-        ):
-            raise HTTPException(
-                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected structure family {entry.structure_family}",
-            )
+        )
         structure_family = entry.structure_family
         # Deferred import because this is not a required dependency of the server
         # for some use cases.
@@ -1070,11 +1064,8 @@ def get_router(
             structure_families={StructureFamily.ragged},
             access_policy=getattr(request.app.state, "access_policy", None),
         )
-        if entry.structure_family != StructureFamily.ragged:
-            raise HTTPException(
-                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected structure family {entry.structure_family}",
-            )
+        # get_entry() has already checked this.
+        assert entry.structure_family == StructureFamily.ragged
         structure_family = entry.structure_family
 
         from ..structures.ragged import CanonicalRaggedArray, RaggedSlicingError
@@ -1381,11 +1372,8 @@ def get_router(
         """
         Fetch a partition (continuous block of rows) from a DataFrame.
         """
-        if entry.structure_family != StructureFamily.table:
-            raise HTTPException(
-                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected structure family {entry.structure_family}",
-            )
+        # get_entry() has already checked this.
+        assert entry.structure_family == StructureFamily.table
         try:
             # The singular/plural mismatch here of "fields" and "field" is
             # due to the ?field=A&field=B&field=C... encodes in a URL.
@@ -1522,11 +1510,8 @@ def get_router(
         """
         Fetch the data for the given table.
         """
-        if entry.structure_family != StructureFamily.table:
-            raise HTTPException(
-                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected structure family {entry.structure_family}",
-            )
+        # get_entry() has already checked this.
+        assert entry.structure_family == StructureFamily.table
         try:
             with record_timing(request.state.metrics, "read"):
                 data = await ensure_awaitable(entry.read, column)
@@ -1732,14 +1717,11 @@ def get_router(
             {StructureFamily.table, StructureFamily.container},
             getattr(request.app.state, "access_policy", None),
         )
-        if not (
+        # get_entry() has already checked this.
+        assert (
             entry.structure_family == StructureFamily.table
             or entry.structure_family == StructureFamily.container
-        ):
-            raise HTTPException(
-                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected structure family {entry.structure_family}",
-            )
+        )
         try:
             with record_timing(request.state.metrics, "read"):
                 data = await ensure_awaitable(entry.read, field)
@@ -1964,11 +1946,8 @@ def get_router(
             {StructureFamily.awkward},
             getattr(request.app.state, "access_policy", None),
         )
-        if entry.structure_family != StructureFamily.awkward:
-            raise HTTPException(
-                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected structure family {entry.structure_family}",
-            )
+        # get_entry() has already checked this.
+        assert entry.structure_family == StructureFamily.awkward
         structure_family = entry.structure_family
         # Deferred import because this is not a required dependency of the server
         # for some use cases.
@@ -2566,11 +2545,8 @@ def get_router(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node cannot be written to.",
             )
-        if entry.structure_family != StructureFamily.awkward:
-            raise HTTPException(
-                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected structure family {entry.structure_family}",
-            )
+        # get_entry() has already checked this.
+        assert entry.structure_family == StructureFamily.awkward
         media_type = request.headers["content-type"]
         deserializer = deserialization_registry.dispatch(
             StructureFamily.awkward, media_type

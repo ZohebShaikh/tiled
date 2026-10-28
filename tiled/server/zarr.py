@@ -148,14 +148,11 @@ def get_zarr_router_v2() -> APIRouter:
             structure_families={StructureFamily.array, StructureFamily.sparse},
             access_policy=getattr(request.app.state, "access_policy", None),
         )
-        if not (
+        # get_entry() has already checked this.
+        assert (
             entry.structure_family == StructureFamily.array
             or entry.structure_family == StructureFamily.sparse
-        ):
-            raise HTTPException(
-                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected structure family {entry.structure_family}",
-            )
+        )
         structure = entry.structure()
         assert structure.data_type is not None
         try:
@@ -435,14 +432,11 @@ def get_zarr_router_v3() -> APIRouter:
             },
             access_policy=getattr(request.app.state, "access_policy", None),
         )
-        if not (
+        # get_entry() has already checked this.
+        assert (
             entry.structure_family == StructureFamily.array
             or entry.structure_family == StructureFamily.sparse
-        ):
-            raise HTTPException(
-                status_code=HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected structure family {entry.structure_family}",
-            )
+        )
 
         if block is not None:
             import numpy as np

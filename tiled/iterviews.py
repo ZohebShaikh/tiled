@@ -40,11 +40,18 @@ class IterViewBase:
             return len(source)
         return source()
 
+    # Subclasses inherit from the collections.abc views so that they are valid
+    # return types for Mapping.keys() etc. Keep the plain-iterable semantics
+    # these views have always had rather than the Set behavior those bring:
+    # membership iterates (no per-key lookup), and hashing and equality are
+    # by identity.
+
     def __contains__(self, item):
-        if isinstance(getattr(self, "_mapping"), collections.abc.Mapping):
-            # The collections.abc view that follows in each subclass's MRO.
-            return getattr(super(), "__contains__")(item)
-        return any(element == item for element in self)
+        return any(element is item or element == item for element in self)
+
+    __eq__ = object.__eq__
+    __ne__ = object.__ne__
+    __hash__ = object.__hash__
 
     def __init_subclass__(cls, *args, **kwargs):
         cls.first.__doc__ = f"Get the first {cls._name}."
@@ -212,10 +219,6 @@ class ValuesView(IterViewBase, collections.abc.ValuesView):
     def __iter__(self):
         for key, value in self._items_slice(0, None, 1, self._page_size):
             yield value
-
-    def __contains__(self, value):
-        # Iterate in pages rather than looking up each key individually.
-        return any(v is value or v == value for v in self)
 
 
 def slice_to_interval(slice_):

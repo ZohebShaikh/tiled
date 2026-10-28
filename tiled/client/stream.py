@@ -140,10 +140,13 @@ class _RegularWebsocketWrapper:
         if self._websocket is None:
             raise RuntimeError("Websocket is not connected.")
         try:
-            # Messages are msgpack-encoded; always receive them as bytes.
-            return self._websocket.recv(timeout=timeout, decode=False)
+            data = self._websocket.recv(timeout=timeout)
         except websockets.exceptions.ConnectionClosedOK:
             return None
+        # The server sends msgpack in binary frames, which arrive as bytes.
+        # (recv(decode=False) would say so directly but needs websockets>=13.)
+        assert isinstance(data, bytes)
+        return data
 
     def close(self):
         """Close websocket connection."""

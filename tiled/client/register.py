@@ -17,7 +17,7 @@ from ..mimetypes import (
 )
 from ..structures.core import StructureFamily
 from ..structures.data_source import Asset, DataSource, Management
-from ..utils import ensure_uri, import_object, path_from_uri
+from ..utils import ReadOnlyChainMap, ensure_uri, import_object, path_from_uri
 from .utils import ClientError
 
 logger = logging.getLogger(__name__)
@@ -111,8 +111,8 @@ class Settings:
         for key, value in list((adapters_by_mimetype).items()):
             if isinstance(value, str):
                 adapters_by_mimetype[key] = import_object(value)
-        merged_adapters_by_mimetype = (
-            DEFAULT_REGISTRATION_ADAPTERS_BY_MIMETYPE | adapters_by_mimetype
+        merged_adapters_by_mimetype = ReadOnlyChainMap(
+            adapters_by_mimetype, DEFAULT_REGISTRATION_ADAPTERS_BY_MIMETYPE
         )
         if isinstance(key_from_filename, str):
             key_from_filename = import_object(key_from_filename)
