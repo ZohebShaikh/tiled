@@ -27,7 +27,7 @@ def project_form(
 
         fields = []
         contents = []
-        for field, content in zip(original_fields, form.contents, strict=False):
+        for field, content in zip(original_fields, form.contents):
             projected = project_form(content, form_keys_touched)
             if projected is not None:
                 fields.append(field)
@@ -66,7 +66,7 @@ def project_form(
         else:
             return None
 
-    elif isinstance(form, awkward.forms.RegularForm | awkward.forms.UnmaskedForm):
+    elif isinstance(form, (awkward.forms.RegularForm, awkward.forms.UnmaskedForm)):
         return form.copy(content=project_form(form.content, form_keys_touched))
 
     elif isinstance(form, awkward.forms.EmptyForm):

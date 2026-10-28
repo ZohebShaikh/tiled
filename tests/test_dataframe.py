@@ -169,10 +169,10 @@ def test_url_limit_bypass(context, url_limit, expected_method):
         pandas.testing.assert_frame_equal(actual, expected)
         assert list(actual.columns) == columns
 
-        requests = list(history.requests)
+        requests = list(request for request in history.requests)
         assert len(requests) == df_client.structure().npartitions
 
-        request_methods = [request.method for request in requests]
+        request_methods = list(request.method for request in requests)
         if expected_method == "POST":
             assert "POST" in request_methods  # At least one POST request
         elif expected_method == "GET":
@@ -209,7 +209,7 @@ def test_http_fetch_columns(context, http_method, link):
         pandas.testing.assert_frame_equal(actual, expected)
         assert list(actual.columns) == columns
 
-        requests = list(history.requests)
+        requests = list(request for request in history.requests)
         assert len(requests) == 1
 
 

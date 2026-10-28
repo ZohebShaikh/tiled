@@ -114,8 +114,7 @@ def gather_profiles(paths, strict=True):
                         raise
                     else:
                         warnings.warn(
-                            f"Skipping {filepath!s}. Failed to parse with error: {err!r}.",
-                            stacklevel=2,
+                            f"Skipping {filepath!s}. Failed to parse with error: {err!r}."
                         )
                         continue
                 if not isinstance(content, collections.abc.Mapping):
@@ -123,8 +122,7 @@ def gather_profiles(paths, strict=True):
                         raise
                     else:
                         warnings.warn(
-                            f"Skipping {filepath!r}. Content has invalid structure (not a mapping).",
-                            stacklevel=2,
+                            f"Skipping {filepath!r}. Content has invalid structure (not a mapping)."
                         )
                 filepath_to_content[filepath] = content
         levels.append(filepath_to_content)
@@ -145,7 +143,7 @@ def resolve_precedence(levels):
         collections.defaultdict(list) for _ in range(len(paths))
     ]
     for profile_name_to_filepaths, filepath_to_content in zip(
-        profile_name_to_filepaths_per_level, levels, strict=False
+        profile_name_to_filepaths_per_level, levels
     ):
         for filepath, content in filepath_to_content.items():
             for profile_name in content:
@@ -153,7 +151,7 @@ def resolve_precedence(levels):
     combined = {}
     collisions = {}
     for profile_name_to_filepaths, filepath_to_content in zip(
-        profile_name_to_filepaths_per_level, levels, strict=False
+        profile_name_to_filepaths_per_level, levels
     ):
         for profile_name, filepaths in profile_name_to_filepaths.items():
             # A profile name in this level resolves any collisions in the previous level.
@@ -200,7 +198,7 @@ The profile will be ommitted. Fix this by removing one of the duplicates"""
             ).format(
                 filepaths="\n".join(map(str, filepaths)), profile_name=profile_name
             )
-        warnings.warn(msg, stacklevel=2)
+        warnings.warn(msg)
     return combined
 
 

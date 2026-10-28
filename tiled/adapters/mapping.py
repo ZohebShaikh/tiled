@@ -520,7 +520,7 @@ def walk_string_values(tree: MapAdapter[Any], node: Any | None = None) -> Iterat
         if isinstance(value, str):
             yield value
         elif hasattr(value, "items"):
-            for k, _v in value.items():
+            for k, v in value.items():
                 yield from walk_string_values(value, k)
         elif isinstance(value, Iterable):
             for item in value:
@@ -589,11 +589,11 @@ def full_text_search(query: Any, tree: MapAdapter[A]) -> MapAdapter[A]:
     text = query.text
     query_words = set(text.split())
     for key, value in tree.items():
-        words = {
+        words = set(
             word
             for s in walk_string_values(value.metadata())
             for word in s.lower().split()
-        }
+        )
         # Note that `not set.isdisjoint` is faster than `set.intersection`. At
         # the C level, `isdisjoint` loops over the set until it finds one match,
         # and then bails, whereas `intersection` proceeds to find all matches.

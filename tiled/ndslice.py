@@ -30,7 +30,7 @@ def merge_slices(*args: Union["NDSlice", "NDBlock"]) -> Union["NDSlice", "NDBloc
 
     # Loop over dimensions and check if they can be merged
     already_merged, result = False, []
-    for dim in zip(*args, strict=False):
+    for dim in zip(*args):
         # Ellipsis at the same position can be merged
         if all(map(is_ellipsis, dim)):
             result.append(Ellipsis)
@@ -63,10 +63,10 @@ def merge_slices(*args: Union["NDSlice", "NDBlock"]) -> Union["NDSlice", "NDBloc
 
         # Now we have only slices and can check for contiguity and compatibility
         if all(isinstance(d, builtins.slice) for d in dim):
-            starts = {d.start or 0 for d in dim}
-            stops = {d.stop for d in dim}
+            starts = set(d.start or 0 for d in dim)
+            stops = set(d.stop for d in dim)
 
-            if len({d.step or 1 for d in dim}) != 1:
+            if len(set(d.step or 1 for d in dim)) != 1:
                 raise ValueError("Slice dimensions must have the same step")
 
             elif len(starts) == 1 and len(stops) == 1:
@@ -206,7 +206,7 @@ def split_slice(
                 for x in bnd
                 if x in range(slc.start, slc.stop, slc.step or 1) and x != slc.start
             ]
-            for bnd, slc in zip(pref_splits, arr_slice, strict=False)
+            for bnd, slc in zip(pref_splits, arr_slice)
         ]
 
     # Start with the most chunked or longest dimension and subslice it
@@ -239,10 +239,7 @@ def split_slice(
             break
 
     # Replace (squeeze) any singleton slices if they were integers originally
-    result = [
-        [res[0].start] if flag else res
-        for res, flag in zip(result, is_int_dim, strict=False)
-    ]
+    result = [[res[0].start] if flag else res for res, flag in zip(result, is_int_dim)]
 
     # Form the dict of Cartesian products
     keys = itertools.product(
@@ -250,7 +247,7 @@ def split_slice(
     )
     vals = itertools.product(*result)
 
-    return {k: NDSlice(v) for k, v in zip(keys, vals, strict=False)}
+    return {k: NDSlice(v) for k, v in zip(keys, vals)}
 
 
 def _slc_with_int(slc: builtins.slice, idx: int) -> int:
@@ -410,9 +407,9 @@ class NDSlice(tuple):
     def __new__(
         cls, *args: int | builtins.slice | EllipsisType | Iterable | None
     ) -> "NDSlice":
-        if len(args) == 1 and (isinstance(args[0], tuple | list) or args[0] is None):
+        if len(args) == 1 and (isinstance(args[0], (tuple, list)) or args[0] is None):
             return cls(*(args[0] or ()))
-        if any(not isinstance(s, int | builtins.slice | EllipsisType) for s in args):
+        if any(not isinstance(s, (int, builtins.slice, EllipsisType)) for s in args):
             raise TypeError(
                 f"NDSlice expected int, slice or Ellipsis; got {args} instead. Use "
                 "NDSlice.from_numpy_str() or NDSlice.from_json() to parse strings or JSON."
@@ -634,7 +631,7 @@ class NDSlice(tuple):
     def is_scalar(self, shape: tuple[int, ...]) -> bool:
         "Check if this NDSlice selects a single element (scalar) from an array of the given shape"
         return (len(self) == len(shape)) and all(
-            _is_scalar_slice(s, length=n) for s, n in zip(self, shape, strict=False)
+            _is_scalar_slice(s, length=n) for s, n in zip(self, shape)
         )
 
 
@@ -659,14 +656,14 @@ class NDBlock(NDSlice):
     def shape_from_chunks(self, chunks: Chunks) -> tuple[int, ...]:
         "Find the shape of the block of chunks for an array with the given chunks"
         expanded = self.expand_for_shape(tuple(map(len, chunks)))
-        selected = tuple(ch[sl] for ch, sl in zip(chunks, expanded, strict=False))
+        selected = tuple(ch[sl] for ch, sl in zip(chunks, expanded))
         return tuple(sum(ch) if isinstance(ch, tuple) else ch for ch in selected)
 
     def slice_from_chunks(self, chunks: Chunks) -> NDSlice:
         "Find the slice over entire array with given chunks that selects this block"
         expanded = self.expand_for_shape(tuple(map(len, chunks)))
         slice_ = []
-        for sl, ch in zip(expanded, chunks, strict=False):
+        for sl, ch in zip(expanded, chunks):
             if isinstance(sl, int):
                 start = sum(ch[:sl])
                 slice_.append(slice(start, start + ch[sl]))
@@ -756,7 +753,7 @@ def block_for_slice(
 
     # For each dimension, determine which chunks are touched and how to slice concatenated blocks
     block_slices, adjusted_slices = [], []
-    for dim_idx, (slc, dim_chunks) in enumerate(zip(slice, chunks, strict=False)):
+    for dim_idx, (slc, dim_chunks) in enumerate(zip(slice, chunks)):
         # Compute chunk boundaries: [0, chunks[0], chunks[0]+chunks[1], ...]
         chunk_bounds = [0, *itertools.accumulate(dim_chunks)]
 

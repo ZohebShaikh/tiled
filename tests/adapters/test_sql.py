@@ -778,7 +778,7 @@ def test_append_nullable(
         elif len(a1) != len(a2):
             return False
         else:
-            return all(deep_array_equal(x1, x2) for x1, x2 in zip(a1, a2, strict=False))
+            return all(deep_array_equal(x1, x2) for x1, x2 in zip(a1, a2))
 
     # Define a table and a storage
     data_uri = request.getfixturevalue(data_uri)

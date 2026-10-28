@@ -26,9 +26,14 @@ Write the date in place of the "Unreleased" in the case a new version is release
   such as a custom `auth=` or `timeout=`, must now be `httpx2` types, and
   exceptions raised are `httpx2` exceptions. Python 3.10 is no longer
   supported, because httpx2 requires Python 3.11 or newer.
+- Python 3.14 is now officially supported.
 
 ### Fixed
 
+- Fixed `ArrayClient.patch` on arrays whose shape is not a whole number of
+  chunks. The check for writing past the end, and the new shape after
+  `extend=True`, used the Zarr array's shape, which is rounded up to whole
+  chunks, so a patch could silently grow the array or add fill values.
 - Fixed serving HDF5 files that have an empty (null dataspace) attribute or a
   byte-string attribute that is not valid UTF-8. Either one made every node
   in the file fail to load. Empty attributes are now served as `null`, and

@@ -494,7 +494,7 @@ async def construct_resource(
     id_ = path_parts[-1] if path_parts else ""
     attributes = {"ancestors": path_parts[:-1]}
     if include_data_sources and hasattr(entry, "data_sources"):
-        if callable(entry.data_sources):
+        if callable(getattr(entry, "data_sources")):
             # Catalog adapters expose `data_sources(include_assets=...)`; the
             # assets are loaded only when the client asked to include data
             # sources (they are otherwise omitted for large file sequences).
@@ -668,7 +668,7 @@ def _fallback_msgpack_encoder(obj):
     if "numpy" in sys.modules:
         import numpy
 
-        if isinstance(obj, numpy.generic | numpy.ndarray):
+        if isinstance(obj, (numpy.generic, numpy.ndarray)):
             if numpy.isscalar(obj):
                 return obj.item()
             return obj.tolist()

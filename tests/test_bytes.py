@@ -415,7 +415,7 @@ def test_raw_export_blosc2_streaming_not_truncated(http_client, tmp_path):
 
 def _asset_bytes_exchange(history):
     """Return the (request, response) pair for the `/asset/bytes` download."""
-    for request, response in zip(history.requests, history.responses, strict=False):
+    for request, response in zip(history.requests, history.responses):
         if "/asset/bytes/" in str(request.url):
             return request, response
     raise AssertionError("no /asset/bytes request was recorded")

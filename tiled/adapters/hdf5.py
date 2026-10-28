@@ -222,8 +222,7 @@ class HDF5ArrayAdapter(ArrayAdapter):
                 "If the data are variable-length strings, Tiled will "
                 "repackage them as a fixed-length bytes array; "
                 "otherwise an empty placeholder of the same shape "
-                "will be served.",
-                stacklevel=2,
+                "will be served."
             )
 
             is_vlen_string = h5py.check_string_dtype(dtype) is not None
@@ -295,18 +294,16 @@ class HDF5ArrayAdapter(ArrayAdapter):
                 slc_rest = tuple(
                     tuple(
                         builtins.slice(start, stop)
-                        for start, stop in zip(dim_starts, dim_stops, strict=False)
+                        for start, stop in zip(dim_starts, dim_stops)
                     )
-                    for dim_starts, dim_stops in zip(
-                        rest_starts, rest_stops, strict=False
-                    )
+                    for dim_starts, dim_stops in zip(rest_starts, rest_stops)
                 )
 
             # Define the Dask tasks for loading each chunk from the files
-            name = "hdf5-stack-" + str(hash((dataset, *file_paths)))
+            name = "hdf5-stack-" + str(hash(tuple([dataset, *file_paths])))
             dsk = {}  # mapping of (name: task + args) for delayed read task
             dim0_chunk_idx = 0  # global chunk index along the leftmost dimension
-            for fpath, dim0_chunks in zip(file_paths, file_chunks, strict=False):
+            for fpath, dim0_chunks in zip(file_paths, file_chunks):
                 # Main loop over the chunks for the leftmost dimension for each file
                 dim0_start = 0
                 for dim0_chunk_size in dim0_chunks:
@@ -315,7 +312,7 @@ class HDF5ArrayAdapter(ArrayAdapter):
                     key = (name, dim0_chunk_idx)
 
                     # Inner loop over the rest of dimensions
-                    for kr, sr in zip(key_rest, slc_rest, strict=False):
+                    for kr, sr in zip(key_rest, slc_rest):
                         dsk[key + kr] = (_read_hdf5_array, fpath, slc + sr)
 
                     dim0_start = dim0_stop

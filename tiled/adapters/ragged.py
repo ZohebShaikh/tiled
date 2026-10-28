@@ -234,7 +234,7 @@ class RaggedSQLAdapter(Adapter[RaggedStructure]):
         selected_lengths = [chunks0[i] for i in chunk_indexes]
         awk_arrays = [
             awkward.from_buffers(form, length, buffer)
-            for length, buffer in zip(selected_lengths, buffers, strict=False)
+            for length, buffer in zip(selected_lengths, buffers)
         ]
 
         return make_ragged_array(awkward.concatenate(awk_arrays), slice=slc)

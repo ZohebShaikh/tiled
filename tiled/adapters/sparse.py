@@ -125,7 +125,7 @@ class COOAdapter(SparseAdapter):
         local_blocks = {}
         for block, (coords, data) in blocks.items():
             offsets = []
-            for b, c in zip(block, chunks, strict=False):
+            for b, c in zip(block, chunks):
                 offset = sum(c[:b])
                 offsets.append(offset)
             local_coords = coords - [[i] for i in offsets]
@@ -177,7 +177,7 @@ class COOAdapter(SparseAdapter):
         all_data = []
         for block, (coords, data) in self.blocks.items():
             offsets = []
-            for b, c in zip(block, self._structure.chunks, strict=False):
+            for b, c in zip(block, self._structure.chunks):
                 offset = sum(c[:b])
                 offsets.append(offset)
             global_coords = coords + [[i] for i in offsets]

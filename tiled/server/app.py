@@ -965,7 +965,7 @@ def build_app(
                 )
                 logger.warning(invalid_version_message)
                 if isinstance(caught_exception, packaging.version.InvalidVersion):
-                    warnings.warn(invalid_version_message, stacklevel=2)
+                    warnings.warn(invalid_version_message)
             else:
                 if (not parsed_version.is_devrelease) and (
                     parsed_version < MINIMUM_SUPPORTED_PYTHON_CLIENT_VERSION

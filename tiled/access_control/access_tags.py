@@ -307,7 +307,6 @@ async def update_access_tags_tables(engine, tags, owners, public_tags):
                 "are still assigned to data, so instead of being deleted they "
                 f"are retained with all grants revoked: {retained_tag_names}",
                 UserWarning,
-                stacklevel=2,
             )
             await connection.execute(
                 update(tags_table)
@@ -582,7 +581,6 @@ class AccessTagsCompiler:
                     warnings.warn(
                         f"Group with {groupname=} does not exist - skipping",
                         UserWarning,
-                        stacklevel=2,
                     )
                     continue
                 else:
@@ -635,7 +633,6 @@ class AccessTagsCompiler:
                     "The authentication database is not initialized yet; "
                     "no principal tags were generated.",
                     UserWarning,
-                    stacklevel=2,
                 )
                 return
 
@@ -654,7 +651,6 @@ class AccessTagsCompiler:
                         "The authentication database is not initialized yet; "
                         "no principal tags were generated.",
                         UserWarning,
-                        stacklevel=2,
                     )
                     return
                 # Read the roles once; the scopes granted through a role are
@@ -700,7 +696,6 @@ class AccessTagsCompiler:
                 f"treated as stale until a compilation can read the "
                 f"authentication database again.",
                 UserWarning,
-                stacklevel=2,
             )
             return
 
@@ -821,7 +816,6 @@ class AccessTagsCompiler:
                         warnings.warn(
                             f"Group with {groupname=} does not exist - skipping",
                             UserWarning,
-                            stacklevel=2,
                         )
                         continue
                     else:

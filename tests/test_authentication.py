@@ -501,7 +501,7 @@ def test_session_limit(enter_username_password, config):
     try:
         with Context.from_app(build_app_from_config(config)) as context:
             with enter_username_password("alice", "secret1"):
-                for _i in range(authentication.SESSION_LIMIT):
+                for i in range(authentication.SESSION_LIMIT):
                     context.authenticate()
                     context.logout()
                 # Hit Session limit.

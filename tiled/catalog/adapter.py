@@ -279,7 +279,7 @@ class Context:
         if isinstance(writable_storage, dict):
             writable_storage = list(writable_storage.values())
         # Back-compat: `writable_storage` used to be a filepath.
-        if isinstance(writable_storage, str | Path):
+        if isinstance(writable_storage, (str, Path)):
             writable_storage = [writable_storage]
         if isinstance(readable_storage, str):
             raise ValueError(
@@ -1121,7 +1121,7 @@ class CatalogNodeAdapter:
         elif self.context.engine.dialect.name == "postgresql":
             from sqlalchemy.dialects.postgresql import insert
         else:
-            raise AssertionError()  # future-proofing
+            assert False  # future-proofing
 
         return insert
 
@@ -1267,7 +1267,7 @@ class CatalogNodeAdapter:
                 # Include IDs assigned by database in response.
                 data_sources_with_ids = []
                 for data_source, data_source_orm in zip(
-                    data_sources, refreshed_node.data_sources, strict=False
+                    data_sources, refreshed_node.data_sources
                 ):
                     ds = data_source.model_copy()
                     ds.id = data_source_orm.id
@@ -1352,14 +1352,14 @@ class CatalogNodeAdapter:
         ).on_conflict_do_nothing(index_elements=["id"])
         async with self.context.session() as db:
             await db.execute(statement)
-            values = {
-                "structure_family": data_source.structure_family,
-                "mimetype": data_source.mimetype,
-                "management": data_source.management,
-                "parameters": data_source.parameters,
-                "properties": data_source.properties,
-                "structure_id": structure_id,
-            }
+            values = dict(
+                structure_family=data_source.structure_family,
+                mimetype=data_source.mimetype,
+                management=data_source.management,
+                parameters=data_source.parameters,
+                properties=data_source.properties,
+                structure_id=structure_id,
+            )
             result = await db.execute(
                 update(orm.DataSource)
                 .where(orm.DataSource.id == data_source.id)
@@ -1655,7 +1655,7 @@ class CatalogNodeAdapter:
                 deleted_asset_records = (await db.execute(deletable_assets_stmt)).all()
 
                 # Now delete the gathered assets, if any
-                if asset_ids := {record[0] for record in deleted_asset_records}:
+                if asset_ids := set(record[0] for record in deleted_asset_records):
                     await db.execute(
                         delete(orm.Asset).where(orm.Asset.id.in_(asset_ids))
                     )
@@ -1670,16 +1670,16 @@ class CatalogNodeAdapter:
 
         # Physical deletion -- outside database transaction
         # Delete assets backed by files and blobs written by Tiled
-        for _asset_id, data_uri, is_directory, management in deleted_asset_records:
+        for asset_id, data_uri, is_directory, management in deleted_asset_records:
             if management != Management.external:
                 delete_physical_asset(data_uri, is_directory=is_directory)
         # Delete storage database entries (management == writable, always)
-        for _asset_id, data_uri, table_name, dataset_id in deleted_from_storage:
+        for asset_id, data_uri, table_name, dataset_id in deleted_from_storage:
             delete_physical_asset(
                 data_uri, table_name=table_name, dataset_id=dataset_id
             )
 
-        return len({record[0] for record in deleted_asset_records})
+        return len(set(record[0] for record in deleted_asset_records))
 
     async def delete_asset(self, asset_id, external_only=True):
         """Dissociate a single Asset from this Node and delete it if unreferenced.
@@ -2720,10 +2720,10 @@ def specs(query, tree):
     attr = orm.Node.specs
     if dialect_name == "sqlite":
         # Construct the conditions for includes
-        for _i, name in enumerate(query.include):
+        for i, name in enumerate(query.include):
             conditions.append(attr.like(f'%{{"name":"{name}",%'))
         # Construct the conditions for excludes
-        for _i, name in enumerate(query.exclude):
+        for i, name in enumerate(query.exclude):
             conditions.append(not_(attr.like(f'%{{"name":"{name}",%')))
     elif dialect_name == "postgresql":
         if query.include:

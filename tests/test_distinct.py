@@ -17,7 +17,7 @@ counts = [10, 5, 7]
 
 mapping = {}
 
-for value, count in zip(values, counts, strict=False):
+for value, count in zip(values, counts):
     for _ in range(count):
         mapping[str(uuid.uuid4())] = MapAdapter({}, metadata={"foo": {"bar": value}})
 
@@ -99,9 +99,7 @@ def test_distinct(context):
     )
     expected = {
         "metadata": {
-            "foo.bar": [
-                {"value": v, "count": c} for v, c in zip(values, counts, strict=False)
-            ]
+            "foo.bar": [{"value": v, "count": c} for v, c in zip(values, counts)]
         },
         "specs": [
             {"value": [], "count": 22},

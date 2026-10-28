@@ -180,10 +180,7 @@ def test_csv_arrays(context, csv_array1_uri, csv_array2_uri):
     client = from_context(context)
 
     for key, data_uri, arr in zip(
-        ("array1", "array2"),
-        (csv_array1_uri, csv_array2_uri),
-        (arr1, arr2),
-        strict=False,
+        ("array1", "array2"), (csv_array1_uri, csv_array2_uri), (arr1, arr2)
     ):
         csv_assets = [
             Asset(

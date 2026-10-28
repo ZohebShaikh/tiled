@@ -77,7 +77,7 @@ async def get_entry(
         metrics,
     )
     try:
-        for _i, segment in enumerate(path_parts):
+        for i, segment in enumerate(path_parts):
             if hasattr(entry, "lookup_adapter"):
                 # New catalog adapter
                 # This adapter can jump directly to the node of interest,

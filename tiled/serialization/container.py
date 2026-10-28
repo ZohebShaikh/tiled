@@ -94,7 +94,7 @@ if modules_available("orjson"):
         "Export node to JSON, with each node having a 'contents' and 'metadata' sub-key."
         root_node = node
         to_serialize = {"contents": {}, "metadata": dict(root_node.metadata())}
-        async for key_path, _array_adapter in walk(node, filter_for_access):
+        async for key_path, array_adapter in walk(node, filter_for_access):
             d = to_serialize["contents"]
             node = root_node
             for key in key_path:

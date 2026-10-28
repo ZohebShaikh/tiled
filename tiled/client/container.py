@@ -732,7 +732,7 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
                     "Tab-completion is not supported on this particular Node "
                     "because it has a large number of entries."
                 )
-                warnings.warn(MSG, stacklevel=2)
+                warnings.warn(MSG)
                 return []
             else:
                 return list(self)
@@ -864,7 +864,9 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
 
         # And for data sources
         if "data_sources" in document:
-            item["attributes"]["data_sources"] = list(document.pop("data_sources"))
+            item["attributes"]["data_sources"] = [
+                ds for ds in document.pop("data_sources")
+            ]
 
         # And for access_tags
         if "access_tags" in document:

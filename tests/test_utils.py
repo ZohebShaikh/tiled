@@ -410,7 +410,7 @@ def test_split_1d(data, max_len):
     assert result[-1][1] == stop
 
     # 2. Check contiguous intervals
-    for (_, a_stop), (b_start, _) in zip(result, result[1:], strict=False):
+    for (_, a_stop), (b_start, _) in zip(result, result[1:]):
         assert a_stop == b_start
 
     # 3. Check grid alignment
@@ -447,7 +447,7 @@ def nd_slice_strategy(draw):
 
     slices, shape = [], []
 
-    for start, length, step, rev in zip(starts, lengths, steps, reversed, strict=False):
+    for start, length, step, rev in zip(starts, lengths, steps, reversed):
         if length == 0:
             # Singleton dimension, use an integer index
             slices.append(start)

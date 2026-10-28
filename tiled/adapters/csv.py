@@ -362,7 +362,7 @@ class CSVArrayAdapter(ArrayAdapter):
             _np_struct = []
             column_names = tbl_structure.columns
             for indx, (col_dtype, col_name, is_col_str) in enumerate(
-                zip(column_dtypes, column_names, string_columns, strict=False)
+                zip(column_dtypes, column_names, string_columns)
             ):
                 if is_col_str:
                     # Convert strings to "<Un" dtype, df must exist since we read the entire table

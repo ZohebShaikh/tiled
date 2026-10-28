@@ -858,7 +858,7 @@ def test_files_opened_and_closed(example_files_with_chunked_arrays, swmr):
         files_opened = [call.args[0].name for call in mock_h5open.call_args_list]
         assert files_opened.count(file_paths[0].name) == 2
         assert files_opened.count(file_paths[1].name) == 1
-        assert set(files_opened) == {fp.name for fp in file_paths}
+        assert set(files_opened) == set([fp.name for fp in file_paths])
 
         # Build the app fromn the tree (HDF5Adapter): all datasets in the file are parsed
         mock_h5open.reset_mock()

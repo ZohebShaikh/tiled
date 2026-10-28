@@ -132,7 +132,7 @@ class AuthenticationProviderSpec(BaseModel):
         self,
     ) -> tuple[str, InternalAuthenticator | ExternalAuthenticator]:
         auth = self.authenticator(**(self.args or {}))
-        if not isinstance(auth, InternalAuthenticator | ExternalAuthenticator):
+        if not isinstance(auth, (InternalAuthenticator, ExternalAuthenticator)):
             raise ValueError(f"Type {auth.__class__} is not a known authenticator type")
         return (self.provider, auth)
 
@@ -159,7 +159,7 @@ class Authentication(BaseSettings):
         cls, value: list[AuthenticationProviderSpec]
     ) -> list[AuthenticationProviderSpec]:
         if value is not None:
-            if len(value) != len({s.provider for s in value}):
+            if len(value) != len(set(s.provider for s in value)):
                 raise ValueError("Authenticator provider names must be unique")
         return value or []
 
@@ -498,7 +498,10 @@ class Config(BaseSettings):
 
     @cached_property
     def merged_trees(self) -> Any:  # TODO: update when # 1047 is merged
-        trees = dict(tree_spec.tree_entry for tree_spec in self.trees)
+        trees = {
+            segments: tree
+            for segments, tree in (tree_spec.tree_entry for tree_spec in self.trees)
+        }
         if list(trees) == [()]:
             # Simple case: there is one tree, served at the root path /.
             root_tree = trees[()]
@@ -579,30 +582,30 @@ def parse_configs(src_file: str | Path) -> Config:
 
 
 def construct_build_app_kwargs(config: Config):
-    server_settings = {
-        "root_path": config.root_path,
-        "allow_origins": config.allow_origins,
-        "response_bytesize_limit": config.response_bytesize_limit,
-        "exact_count_limit": config.exact_count_limit,
-        "database": config.database,
-        "reject_undeclared_specs": config.reject_undeclared_specs,
-        "expose_raw_assets": config.expose_raw_assets,
-        "metrics": config.metrics,
-        "webhooks": config.webhooks,
-    }
-    return {
-        "tree": config.merged_trees,
-        "authentication": config.authentication,
-        "server_settings": server_settings,
-        "query_registry": default_query_registry,
-        "serialization_registry": config.serialization_registry(),
-        "deserialization_registry": default_deserialization_registry,
-        "compression_registry": default_compression_registry,
-        "validation_registry": config.validation_registry(),
-        "tasks": config.tree_tasks(),
-        "access_policy": config.access_policy,
-        "include_routers": config.routers,
-    }
+    server_settings = dict(
+        root_path=config.root_path,
+        allow_origins=config.allow_origins,
+        response_bytesize_limit=config.response_bytesize_limit,
+        exact_count_limit=config.exact_count_limit,
+        database=config.database,
+        reject_undeclared_specs=config.reject_undeclared_specs,
+        expose_raw_assets=config.expose_raw_assets,
+        metrics=config.metrics,
+        webhooks=config.webhooks,
+    )
+    return dict(
+        tree=config.merged_trees,
+        authentication=config.authentication,
+        server_settings=server_settings,
+        query_registry=default_query_registry,
+        serialization_registry=config.serialization_registry(),
+        deserialization_registry=default_deserialization_registry,
+        compression_registry=default_compression_registry,
+        validation_registry=config.validation_registry(),
+        tasks=config.tree_tasks(),
+        access_policy=config.access_policy,
+        include_routers=config.routers,
+    )
 
 
 def _no_op_validator(*args, **kwargs):

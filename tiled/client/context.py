@@ -1190,10 +1190,7 @@ class Context:
                         )
                     ).json()
         else:
-            warnings.warn(
-                "Authentication providers were not configured on the server.",
-                stacklevel=2,
-            )
+            warnings.warn("Authentication providers were not configured on the server.")
 
     def logout(self):
         """

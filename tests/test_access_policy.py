@@ -55,7 +55,7 @@ async def test_node_access_allowed(
     assert await external_policy.init_node(
         principal=principal,
         authn_access_tags=normalize_access_tags(),
-        authn_scopes=set(),
+        authn_scopes=set([]),
         access_tags=normalize_access_tags(["beamline_x_user"]),
     ) == (True, normalize_access_tags(["beamline_x_user"]))
 
@@ -71,7 +71,7 @@ async def test_node_access_denied(
     assert await external_policy.init_node(
         principal=principal,
         authn_access_tags=normalize_access_tags(),
-        authn_scopes=set(),
+        authn_scopes=set([]),
         access_tags=normalize_access_tags(["beamline_x_user"]),
     ) == (False, normalize_access_tags(["beamline_x_user"]))
 
@@ -90,7 +90,7 @@ async def test_node_modify_allowed(
         node=node,
         principal=principal,
         authn_access_tags=normalize_access_tags(),
-        authn_scopes=set(),
+        authn_scopes=set([]),
         access_tags=normalize_access_tags(["beamline_x_user"]),
     ) == (True, normalize_access_tags(["beamline_x_user"]))
 
@@ -109,7 +109,7 @@ async def test_node_modify_denied(
         node=node,
         principal=principal,
         authn_access_tags=normalize_access_tags(),
-        authn_scopes=set(),
+        authn_scopes=set([]),
         access_tags=normalize_access_tags(["beamline_x_user"]),
     ) == (False, normalize_access_tags(["beamline_x_user"]))
 
@@ -127,7 +127,7 @@ async def test_node_modify_denied_when_none_returned(
             node=node,
             principal=principal,
             authn_access_tags=normalize_access_tags(),
-            authn_scopes=set(),
+            authn_scopes=set([]),
             access_tags=normalize_access_tags(["beamline_x_user"]),
         )
 
@@ -142,7 +142,7 @@ async def test_node_modify_with_same_not_modified(
         node=node,
         principal=principal,
         authn_access_tags=normalize_access_tags(),
-        authn_scopes=set(),
+        authn_scopes=set([]),
         access_tags=normalize_access_tags(["beamline_x_user"]),
     ) == (False, normalize_access_tags(["beamline_x_user"]))
 
@@ -159,8 +159,8 @@ async def test_access_filters(
         node=MagicMock(),
         principal=principal,
         authn_access_tags=normalize_access_tags(),
-        authn_scopes=set(),
-        scopes=set(),
+        authn_scopes=set([]),
+        scopes=set([]),
     )
     assert filters == [AccessTagsFilter(tags=["beamline_x"])]
 
@@ -178,7 +178,7 @@ async def test_allowed_scopes(
         node=None,
         principal=principal,
         authn_access_tags=normalize_access_tags(),
-        authn_scopes=set(),
+        authn_scopes=set([]),
     )
     assert allowed_scopes == {"read:data", "write:data"}
 
@@ -194,7 +194,7 @@ async def test_allowed_scopes_return_no_scopes_if_invalid_response(
         node=None,
         principal=principal,
         authn_access_tags=normalize_access_tags(),
-        authn_scopes=set(),
+        authn_scopes=set([]),
     )
     assert allowed_scopes == NO_SCOPES
 
@@ -210,7 +210,7 @@ async def test_allowed_scopes_return_no_scopes_if_validation_error(
         node=None,
         principal=principal,
         authn_access_tags=normalize_access_tags(),
-        authn_scopes=set(),
+        authn_scopes=set([]),
     )
     assert allowed_scopes == NO_SCOPES
 
@@ -238,7 +238,7 @@ async def test_empty_access_tags_public(
     assert await policy.init_node(
         principal=principal,
         authn_access_tags=normalize_access_tags(),
-        authn_scopes=set(),
+        authn_scopes=set([]),
         access_tags=None,
     ) == (allow if allow is not None else remote_allow, normalize_access_tags())
 

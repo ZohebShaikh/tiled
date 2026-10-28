@@ -29,9 +29,7 @@ tree = MapAdapter(
                 "repeated_letter": repeated_letter,
             },
         )
-        for letter, number, repeated_letter in zip(
-            letters, numbers, repeated_letters, strict=False
-        )
+        for letter, number, repeated_letter in zip(letters, numbers, repeated_letters)
     }
 )
 

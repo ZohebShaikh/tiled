@@ -142,7 +142,7 @@ def _copy_container(source, dest, on_conflict):
                 on_conflict == "skip" or on_conflict == "warn"
             ) and err.response.status_code == httpx.codes.CONFLICT:
                 if on_conflict == "warn":
-                    warnings.warn("Skipped existing entry", stacklevel=2)
+                    warnings.warn("Skipped existing entry")
                 continue
             else:
                 raise err

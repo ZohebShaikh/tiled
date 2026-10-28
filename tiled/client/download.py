@@ -188,7 +188,7 @@ def download(
     try:
         with progress:
             with ThreadPoolExecutor(max_workers=max_workers) as pool:
-                for url, target, total in zip(urls, targets, totals, strict=False):
+                for url, target, total in zip(urls, targets, totals):
                     task_id = progress.add_task("download", start=False, total=total)
                     future = pool.submit(
                         _download_url,

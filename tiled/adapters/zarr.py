@@ -167,13 +167,15 @@ class ZarrArrayAdapter(Adapter[ArrayStructure]):
             If slice does not fit wholly with the shape of the existing array
             and extend is False
         """
-        current_shape = self._array.shape
+        # Use the shape from the structure, not from the Zarr array, which
+        # init_storage may have padded out to a whole number of chunks.
+        current_shape = tuple(self.structure().shape)
         normalized_offset = [0] * len(current_shape)
         normalized_offset[: len(offset)] = list(offset)
         new_shape = []
         slice_ = []
         for data_dim, offset_dim, current_dim in zip(
-            data.shape, normalized_offset, current_shape, strict=False
+            data.shape, normalized_offset, current_shape
         ):
             new_shape.append(max(current_dim, data_dim + offset_dim))
             slice_.append(slice(offset_dim, offset_dim + data_dim))
@@ -192,7 +194,7 @@ class ZarrArrayAdapter(Adapter[ArrayStructure]):
         new_chunks = []
         # Zarr has regularly-sized chunks, so no user input is required to
         # simply extend the existing pattern.
-        for chunk_size, size in zip(self._array.chunks, new_shape_tuple, strict=False):
+        for chunk_size, size in zip(self._array.chunks, new_shape_tuple):
             dim = [chunk_size] * (size // chunk_size)
             if size % chunk_size:
                 dim.append(size % chunk_size)

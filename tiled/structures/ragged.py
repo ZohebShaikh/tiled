@@ -351,7 +351,7 @@ def make_ragged_array(
         if array.dtype.name == "object":
             array = ragged.array([row.tolist() for row in array])
         array = ragged.array(array)
-    elif isinstance(array, awkward.Array | _SupportsDLPack):
+    elif isinstance(array, (awkward.Array, _SupportsDLPack)):
         array = ragged.array(array)
     elif hasattr(array, "tolist"):
         array = ragged.array(array.tolist())
@@ -423,11 +423,7 @@ def make_ragged_chunks(
         else:
             chunk_index += 1
 
-    chunks_0 = (
-        tuple(
-            end - start for start, end in zip(boundaries, boundaries[1:], strict=False)
-        ),
-    )
+    chunks_0 = (tuple(end - start for start, end in zip(boundaries, boundaries[1:])),)
     chunks_fixed = tuple((sh,) for sh in array.shape[1:ndim_fixed])
 
     return chunks_0 + chunks_fixed + chunks_none
@@ -480,9 +476,11 @@ def is_ragged_compatible_form(form: awkward.forms.form.Form) -> bool:
         }
     elif isinstance(
         form,
-        awkward.forms.ListOffsetForm
-        | awkward.forms.ListForm
-        | awkward.forms.RegularForm,
+        (
+            awkward.forms.ListOffsetForm,
+            awkward.forms.ListForm,
+            awkward.forms.RegularForm,
+        ),
     ):
         return is_ragged_compatible_form(form.content)
     else:

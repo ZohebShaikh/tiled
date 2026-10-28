@@ -126,7 +126,7 @@ async def client(request, tmpdir_module):
                 _populate_catalog_tree(client)
                 yield client
     else:
-        raise AssertionError()
+        assert False
 
 
 @pytest_asyncio.fixture(loop_scope="module", scope="module")

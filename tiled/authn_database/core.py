@@ -352,7 +352,7 @@ async def latest_principal_activity(
         latest_api_key_activity,
         latest_session_activity,
     ]
-    if all(t is None for t in all_activity):
+    if all([t is None for t in all_activity]):
         return None
     return max(t for t in all_activity if t is not None)
 

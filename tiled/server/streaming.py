@@ -30,10 +30,10 @@ def _build_redis_client(settings: dict[str, Any]) -> redis.Redis:
     When ``ssl`` is set (Sentinel path), TLS is applied to both the Sentinel
     discovery and the data-node connections.
     """
-    kwargs = {
-        "socket_timeout": settings["socket_timeout"],
-        "socket_connect_timeout": settings["socket_connect_timeout"],
-    }
+    kwargs = dict(
+        socket_timeout=settings["socket_timeout"],
+        socket_connect_timeout=settings["socket_connect_timeout"],
+    )
     sentinels = settings.get("sentinels")
     if sentinels:
         hosts = [
@@ -300,9 +300,7 @@ def _make_ws_handler_common(
                     s = ",".join(
                         f"{offset}:{offset + shape}"
                         for offset, shape in zip(
-                            metadata["patch"]["offset"],
-                            metadata["patch"]["shape"],
-                            strict=False,
+                            metadata["patch"]["offset"], metadata["patch"]["shape"]
                         )
                     )
                     metadata["uri"] = f"{uri}?slice={s}"

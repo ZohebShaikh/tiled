@@ -399,7 +399,7 @@ def test_ragged_column_adapter_type_and_data(
     field_index = ragged_names.index(field)
     result_read = child_adapter.read()
 
-    assert isinstance(result_read, np.ndarray | ragged.array)
+    assert isinstance(result_read, (np.ndarray, ragged.array))
     assert ak.array_equal(
         [
             *ragged_data0[field_index].tolist(),

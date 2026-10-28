@@ -41,7 +41,7 @@ mapping = {
         metadata={"letter": letter, "number": number},
         specs=[letter],
     )
-    for letter, number in zip(keys, range(26), strict=False)
+    for letter, number in zip(keys, range(26))
 }
 mapping["does_contain_z"] = ArrayAdapter.from_array(
     numpy.ones(10), metadata={"letters": list(string.ascii_lowercase)}
@@ -122,7 +122,7 @@ async def client(request, tmpdir_module):
                     )
                 yield client
     else:
-        raise AssertionError()
+        assert False
 
 
 def test_key(client):
@@ -256,11 +256,11 @@ def test_not_and_and_or(client):
         ["a", "k", "z"],
         ("a", "k", "z"),
         {"a", "k", "z"},
-        {"a", "k", "z"},
+        {"a", "k", "z", "a", "z", "z"},
     ],
 )
 def test_in(client, query_values):
-    assert sorted(client.search(In("letter", query_values))) == [
+    assert sorted(list(client.search(In("letter", query_values)))) == [
         "a",
         "k",
         "z",
@@ -277,7 +277,7 @@ def test_in_empty(client):
         ["a", "k", "z"],
         ("a", "k", "z"),
         {"a", "k", "z"},
-        {"a", "k", "z"},
+        {"a", "k", "z", "a", "z", "z"},
     ],
 )
 def test_notin(client, query_values):
@@ -285,16 +285,20 @@ def test_notin(client, query_values):
     # SQLite WILL NOT include fields that do not have the key, which is correct.
     # Postgres WILL include fields that do not have the key,
     # because by extension they do not have the value. Also correct. Why?
-    assert sorted(client.search(NotIn("letter", query_values))) == sorted(
-        set(
-            list(mapping.keys()) if client.metadata["backend"] == "postgresql" else keys
+    assert sorted(list(client.search(NotIn("letter", query_values)))) == sorted(
+        list(
+            set(
+                list(mapping.keys())
+                if client.metadata["backend"] == "postgresql"
+                else keys
+            )
+            - set(["a", "k", "z"])
         )
-        - {"a", "k", "z"}
     )
 
 
 def test_not_in_empty(client):
-    assert sorted(client.search(NotIn("letter", []))) == sorted(client)
+    assert sorted(list(client.search(NotIn("letter", [])))) == sorted(list(client))
 
 
 @pytest.mark.parametrize(
@@ -303,7 +307,7 @@ def test_not_in_empty(client):
         (["foo", "bar"], ["baz"]),
         (("foo", "bar"), ("baz",)),
         ({"foo", "bar"}, {"baz"}),
-        ({"foo", "bar"}, {"baz"}),
+        ({"foo", "bar", "foo", "bar", "bar"}, {"baz", "baz", "baz"}),
     ],
 )
 def test_specs(client, include_values, exclude_values):

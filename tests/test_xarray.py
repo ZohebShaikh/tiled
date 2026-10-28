@@ -173,10 +173,10 @@ def test_url_limit_bypass(client, url_limit, expected_method):
         actual = dsc.read()
         xarray.testing.assert_equal(actual, expected)
 
-        requests = list(history.requests)
+        requests = list(request for request in history.requests)
         assert len(requests) == expected_requests
 
-        request_methods = [request.method for request in requests]
+        request_methods = list(request.method for request in requests)
         if expected_method == "POST":
             assert "POST" in request_methods  # At least one POST request
         elif expected_method == "GET":

@@ -43,7 +43,7 @@ class SparseBlocksParquetAdapter(Adapter[SparseStructure]):
     ) -> None:
         num_blocks = (range(len(n)) for n in structure.chunks)
         self.blocks = {}
-        for block, uri in zip(itertools.product(*num_blocks), data_uris, strict=False):
+        for block, uri in zip(itertools.product(*num_blocks), data_uris):
             self.blocks[block] = uri
         super().__init__(structure, metadata=metadata, specs=specs)
 
@@ -114,7 +114,7 @@ class SparseBlocksParquetAdapter(Adapter[SparseStructure]):
         for block, uri in self.blocks.items():
             coords, data = load_block(uri)
             offsets = []
-            for b, c in zip(block, self.structure().chunks, strict=False):
+            for b, c in zip(block, self.structure().chunks):
                 offset = sum(c[:b])
                 offsets.append(offset)
             global_coords = coords + [[i] for i in offsets]

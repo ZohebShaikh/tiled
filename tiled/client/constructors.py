@@ -86,20 +86,15 @@ Or, call login() to manually login.
 For non-interactive authentication, use an API key or add custom auth
 """
     if username is not None:
-        warnings.warn(
-            "Tiled no longer accepts 'username' parameter. " + EXPLAIN_LOGIN,
-            stacklevel=2,
-        )
+        warnings.warn("Tiled no longer accepts 'username' parameter. " + EXPLAIN_LOGIN)
     if auth_provider is not None:
         warnings.warn(
-            "Tiled no longer accepts 'auth_provider' parameter. " + EXPLAIN_LOGIN,
-            stacklevel=2,
+            "Tiled no longer accepts 'auth_provider' parameter. " + EXPLAIN_LOGIN
         )
     if prompt_for_reauthentication is not None:
         warnings.warn(
             "Tiled no longer accepts 'prompt_for_reauthentication' parameter. "
-            + EXPLAIN_LOGIN,
-            stacklevel=2,
+            + EXPLAIN_LOGIN
         )
     context, node_path_parts = Context.from_any_uri(
         uri,

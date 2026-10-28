@@ -1,7 +1,6 @@
 import json
 import os
 import re
-from typing import Annotated
 
 import numcodecs
 import orjson
@@ -67,13 +66,11 @@ def get_zarr_router_v2() -> APIRouter:
     async def get_zarr_attrs(
         request: Request,
         path: str,
-        principal: Annotated[Principal, Depends(get_current_principal)],
-        authn_access_tags: Annotated[
-            AccessTags | None, Depends(get_current_access_tags)
-        ],
-        authn_scopes: Annotated[Scopes, Depends(get_current_scopes)],
-        root_tree: Annotated[pydantic_settings.BaseSettings, Depends(get_root_tree)],
-        session_state: Annotated[dict, Depends(get_session_state)],
+        principal: Principal = Depends(get_current_principal),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
+        authn_scopes: Scopes = Depends(get_current_scopes),
+        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        session_state: dict = Depends(get_session_state),
     ):
         "Return entry.metadata as Zarr attributes metadata (.zattrs)"
         entry = await get_entry(
@@ -105,13 +102,11 @@ def get_zarr_router_v2() -> APIRouter:
     async def get_zarr_group_metadata(
         request: Request,
         path: str,
-        principal: Annotated[Principal, Depends(get_current_principal)],
-        authn_access_tags: Annotated[
-            AccessTags | None, Depends(get_current_access_tags)
-        ],
-        authn_scopes: Annotated[Scopes, Depends(get_current_scopes)],
-        root_tree: Annotated[pydantic_settings.BaseSettings, Depends(get_root_tree)],
-        session_state: Annotated[dict, Depends(get_session_state)],
+        principal: Principal = Depends(get_current_principal),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
+        authn_scopes: Scopes = Depends(get_current_scopes),
+        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        session_state: dict = Depends(get_session_state),
     ):
         await get_entry(
             path,
@@ -135,13 +130,11 @@ def get_zarr_router_v2() -> APIRouter:
     async def get_zarr_array_metadata(
         request: Request,
         path: str,
-        principal: Annotated[Principal, Depends(get_current_principal)],
-        authn_access_tags: Annotated[
-            AccessTags | None, Depends(get_current_access_tags)
-        ],
-        authn_scopes: Annotated[Scopes, Depends(get_current_scopes)],
-        root_tree: Annotated[pydantic_settings.BaseSettings, Depends(get_root_tree)],
-        session_state: Annotated[dict, Depends(get_session_state)],
+        principal: Principal = Depends(get_current_principal),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
+        authn_scopes: Scopes = Depends(get_current_scopes),
+        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        session_state: dict = Depends(get_session_state),
     ):
         entry = await get_entry(
             path,
@@ -181,13 +174,11 @@ def get_zarr_router_v2() -> APIRouter:
     async def get_zarr_array(
         request: Request,
         path: str,
-        principal: Annotated[Principal, Depends(get_current_principal)],
-        authn_access_tags: Annotated[
-            AccessTags | None, Depends(get_current_access_tags)
-        ],
-        authn_scopes: Annotated[Scopes, Depends(get_current_scopes)],
-        root_tree: Annotated[pydantic_settings.BaseSettings, Depends(get_root_tree)],
-        session_state: Annotated[dict, Depends(get_session_state)],
+        principal: Principal = Depends(get_current_principal),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
+        authn_scopes: Scopes = Depends(get_current_scopes),
+        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        session_state: dict = Depends(get_session_state),
     ):
         # If a zarr block is requested, e.g. http://localhost:8000/zarr/v2/array/0.1.2.3,
         # extract it from last part of the path; use the remaining path to get the entry.
@@ -253,7 +244,7 @@ def get_zarr_router_v2() -> APIRouter:
                 block_slices = tuple(
                     [
                         slice(i * c, (i + 1) * c)
-                        for i, c in zip(zarr_block_indx, zarr_block_spec, strict=False)
+                        for i, c in zip(zarr_block_indx, zarr_block_spec)
                     ]
                 )
                 try:
@@ -281,9 +272,7 @@ def get_zarr_router_v2() -> APIRouter:
                 # Pad the last slices with zeros if needed to ensure all zarr blocks have same shapes
                 padding_size = [
                     max(0, sl.stop - sh)
-                    for sl, sh in zip(
-                        block_slices, entry.structure().shape, strict=False
-                    )
+                    for sl, sh in zip(block_slices, entry.structure().shape)
                 ]
                 if sum(padding_size) > 0:
                     array = np.pad(
@@ -314,13 +303,11 @@ def get_zarr_router_v3() -> APIRouter:
     async def get_zarr_metadata(
         request: Request,
         path: str,
-        principal: Annotated[Principal, Depends(get_current_principal)],
-        authn_access_tags: Annotated[
-            AccessTags | None, Depends(get_current_access_tags)
-        ],
-        authn_scopes: Annotated[Scopes, Depends(get_current_scopes)],
-        root_tree: Annotated[pydantic_settings.BaseSettings, Depends(get_root_tree)],
-        session_state: Annotated[dict, Depends(get_session_state)],
+        principal: Principal = Depends(get_current_principal),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
+        authn_scopes: Scopes = Depends(get_current_scopes),
+        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        session_state: dict = Depends(get_session_state),
     ):
         from zarr.dtype import parse_data_type
 
@@ -408,13 +395,11 @@ def get_zarr_router_v3() -> APIRouter:
         request: Request,
         path: str,
         block: str,
-        principal: Annotated[Principal, Depends(get_current_principal)],
-        authn_access_tags: Annotated[
-            AccessTags | None, Depends(get_current_access_tags)
-        ],
-        authn_scopes: Annotated[Scopes, Depends(get_current_scopes)],
-        root_tree: Annotated[pydantic_settings.BaseSettings, Depends(get_root_tree)],
-        session_state: Annotated[dict, Depends(get_session_state)],
+        principal: Principal = Depends(get_current_principal),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
+        authn_scopes: Scopes = Depends(get_current_scopes),
+        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        session_state: dict = Depends(get_session_state),
     ):
         entry = await get_entry(
             path,
@@ -451,7 +436,7 @@ def get_zarr_router_v3() -> APIRouter:
             block_slices = tuple(
                 [
                     slice(i * c, (i + 1) * c)
-                    for i, c in zip(zarr_block_indx, zarr_block_spec, strict=False)
+                    for i, c in zip(zarr_block_indx, zarr_block_spec)
                 ]
             )
             try:
@@ -479,7 +464,7 @@ def get_zarr_router_v3() -> APIRouter:
             # Pad the last slices with zeros if needed to ensure all zarr blocks have same shapes
             padding_size = [
                 max(0, sl.stop - sh)
-                for sl, sh in zip(block_slices, entry.structure().shape, strict=False)
+                for sl, sh in zip(block_slices, entry.structure().shape)
             ]
             if sum(padding_size) > 0:
                 array = np.pad(array, [(0, p) for p in padding_size], mode="constant")
@@ -501,13 +486,11 @@ def get_zarr_router_v3() -> APIRouter:
     async def get_zarr_group(
         request: Request,
         path: str,
-        principal: Annotated[Principal, Depends(get_current_principal)],
-        authn_access_tags: Annotated[
-            AccessTags | None, Depends(get_current_access_tags)
-        ],
-        authn_scopes: Annotated[Scopes, Depends(get_current_scopes)],
-        root_tree: Annotated[pydantic_settings.BaseSettings, Depends(get_root_tree)],
-        session_state: Annotated[dict, Depends(get_session_state)],
+        principal: Principal = Depends(get_current_principal),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
+        authn_scopes: Scopes = Depends(get_current_scopes),
+        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        session_state: dict = Depends(get_session_state),
     ):
         entry = await get_entry(
             path,

@@ -118,7 +118,7 @@ async def test_sorting(a):
     assert ordered_letters != shuffled_letters
     assert sorted(shuffled_letters) != shuffled_letters
 
-    for letter, number in zip(shuffled_letters, shuffled_numbers, strict=False):
+    for letter, number in zip(shuffled_letters, shuffled_numbers):
         await a.create_node(
             key=letter,
             metadata={"letter": letter, "number": number},
@@ -169,7 +169,7 @@ async def test_sorting(a):
 
 @pytest.mark.asyncio
 async def test_search(a):
-    for letter, number in zip(string.ascii_lowercase[:5], range(5), strict=False):
+    for letter, number in zip(string.ascii_lowercase[:5], range(5)):
         await a.create_node(
             key=letter,
             metadata={"letter": letter, "number": number, "x": {"y": {"z": letter}}},
@@ -190,7 +190,7 @@ async def test_search(a):
     assert (await a.search(Eq("x.y.z", "c")).keys_page(limit=5))[0] == ["c"]
     # Created nested nodes and search on them.
     d = await a.lookup_adapter(["d"])
-    for letter, number in zip(string.ascii_lowercase[:5], range(10, 15), strict=False):
+    for letter, number in zip(string.ascii_lowercase[:5], range(10, 15)):
         await d.create_node(
             key=letter,
             metadata={"letter": letter, "number": number},

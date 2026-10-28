@@ -178,7 +178,7 @@ def should_retry_if_unprocessed(exception: Exception) -> "bool | float":
             return True
         return False
     return isinstance(
-        exception, httpx.ConnectError | httpx.ConnectTimeout | httpx.PoolTimeout
+        exception, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
     )
 
 
@@ -292,7 +292,7 @@ def retry_context(context=None, *, on=None):
 
 def should_poll_for_tokens(exception: Exception) -> bool:
     # Retry on transient network errors during device flow polling.
-    if isinstance(exception, httpx.ConnectError | httpx.TimeoutException):
+    if isinstance(exception, (httpx.ConnectError, httpx.TimeoutException)):
         return True
     return False
 
@@ -349,7 +349,7 @@ def export_util(file, format, get, link, params):
         raise ValueError("params may not include 'format'. Use the format parameter.")
     if isinstance(format, str) and format.startswith("."):
         format = format[1:]  # e.g. ".csv" -> "csv"
-    if isinstance(file, str | Path):
+    if isinstance(file, (str, Path)):
         # Infer that `file` is a filepath.
         if format is None:
             format = ".".join(
@@ -439,7 +439,7 @@ def params_from_slice(slice):
     "Generate URL query param ?slice=... from Python slice object."
     params = {}
     if (slice is not None) and (slice is not ...):
-        if isinstance(slice, int | builtins.slice):
+        if isinstance(slice, (int, builtins.slice)):
             slice = [slice]
         slices = []
         for dim in slice:

@@ -45,7 +45,7 @@ class CompositeClient(Container):
     @property
     def _flat_keys_mapping(self):
         result = {}
-        for _key, item in self.get_contents().items():
+        for key, item in self.get_contents().items():
             if item["attributes"]["structure_family"] == StructureFamily.table:
                 for col in item["attributes"]["structure"]["columns"]:
                     result[col] = item["id"] + "/" + col
@@ -233,8 +233,7 @@ class CompositeClient(Container):
                             data_vars[part] = ragged_to_dense(array)
                             warnings.warn(
                                 f"Failed to convert ragged array to numpy: {e}. "
-                                "Returning as a dense array padded with NaNs.",
-                                stacklevel=2,
+                                "Returning as a dense array padded with NaNs."
                             )
                 elif item["attributes"]["structure_family"] == StructureFamily.table:
                     # For now, greedily load tabular data. We cannot know the shape
@@ -260,11 +259,13 @@ class CompositeClient(Container):
         # Create xarray.Dataset from the data_vars dictionary
         is_dim0_consistent = (
             len(
-                {
-                    arr.shape[0]
-                    for var_name, arr in data_vars.items()
-                    if arr.ndim > 0 and not array_dims.get(var_name)
-                }
+                set(
+                    [
+                        arr.shape[0]
+                        for var_name, arr in data_vars.items()
+                        if arr.ndim > 0 and not array_dims.get(var_name)
+                    ]
+                )
             )
             <= 1
         )

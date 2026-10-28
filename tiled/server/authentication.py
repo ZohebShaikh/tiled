@@ -898,10 +898,10 @@ def add_external_routes(
     async def auth_code_route(
         request: Request,
         response: Response,
-        settings: Annotated[Settings, Depends(get_settings)],
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        settings: Settings = Depends(get_settings),
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         request.state.endpoint = "auth"
         user_session_state: UserSessionState | None = await authenticator.authenticate(
@@ -944,7 +944,7 @@ def add_external_routes(
     @router.get(f"/provider/{provider}/authorize")
     async def authorize_redirect_route(
         request: Request,
-        state: Annotated[str | None, Query()] = None,
+        state: str | None = Query(None),
     ):
         """Redirect browser to OAuth provider for authentication."""
 
@@ -970,9 +970,9 @@ def add_external_routes(
     @router.post(f"/provider/{provider}/authorize")
     async def device_code_authorize_route(
         request: Request,
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         request.state.endpoint = "auth"
         async with db_factory() as db:
@@ -1021,12 +1021,12 @@ def add_external_routes(
     @router.post(f"/provider/{provider}/device_code")
     async def device_code_user_code_submit_route(
         request: Request,
-        code: Annotated[str, Form()],
-        user_code: Annotated[str, Form()],
-        settings: Annotated[Settings, Depends(get_settings)],
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        code: str = Form(),
+        user_code: str = Form(),
+        settings: Settings = Depends(get_settings),
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         request.state.endpoint = "auth"
         action = (
@@ -1088,10 +1088,10 @@ def add_external_routes(
     async def device_code_token_route(
         request: Request,
         body: schemas.DeviceCode,
-        settings: Annotated[Settings, Depends(get_settings)],
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        settings: Settings = Depends(get_settings),
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         request.state.endpoint = "auth"
         device_code_hex = body.device_code
@@ -1131,11 +1131,11 @@ def add_internal_routes(
     @router.post(f"/provider/{provider}/token")
     async def handle_credentials_route(
         request: Request,
-        form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-        settings: Annotated[Settings, Depends(get_settings)],
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        form_data: OAuth2PasswordRequestForm = Depends(),
+        settings: Settings = Depends(get_settings),
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         request.state.endpoint = "auth"
         user_session_state: UserSessionState | None = await authenticator.authenticate(
@@ -1234,16 +1234,15 @@ def authentication_router() -> APIRouter:
     )
     async def principal_list(
         request: Request,
-        *,
-        offset: Annotated[int | None, Query(alias="page[offset]", ge=0)] = 0,
-        limit: Annotated[
-            int | None, Query(alias="page[limit]", ge=0, le=MAX_PAGE_SIZE)
-        ] = DEFAULT_PAGE_SIZE,
-        principal: Annotated[schemas.Principal | None, Depends(get_current_principal)],
+        offset: int | None = Query(0, alias="page[offset]", ge=0),
+        limit: int | None = Query(
+            DEFAULT_PAGE_SIZE, alias="page[limit]", ge=0, le=MAX_PAGE_SIZE
+        ),
+        principal: schemas.Principal | None = Depends(get_current_principal),
         _=Security(check_scopes, scopes=["read:principals"]),
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         "List Principals (users and services)."
         request.state.endpoint = "auth"
@@ -1281,13 +1280,12 @@ def authentication_router() -> APIRouter:
     )
     async def create_service_principal(
         request: Request,
-        principal: Annotated[schemas.Principal | None, Depends(get_current_principal)],
-        *,
+        principal: schemas.Principal | None = Depends(get_current_principal),
         _=Security(check_scopes, scopes=["write:principals"]),
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
-        role: Annotated[str, Query(...)],
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
+        role: str = Query(...),
     ):
         "Create a principal for a service account."
 
@@ -1320,11 +1318,10 @@ def authentication_router() -> APIRouter:
     async def principal(
         request: Request,
         uuid: uuid_module.UUID,
-        *,
         _=Security(check_scopes, scopes=["read:principals"]),
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         "Get information about one Principal (user or service)."
         request.state.endpoint = "auth"
@@ -1360,11 +1357,10 @@ def authentication_router() -> APIRouter:
         request: Request,
         uuid: uuid_module.UUID,
         first_eight: str,
-        *,
         _=Security(check_scopes, scopes=["admin:apikeys"]),
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         "Allow Tiled Admins to delete any user's apikeys e.g."
         request.state.endpoint = "auth"
@@ -1392,12 +1388,11 @@ def authentication_router() -> APIRouter:
         request: Request,
         uuid: uuid_module.UUID,
         apikey_params: schemas.APIKeyRequestParams,
-        principal: Annotated[schemas.Principal | None, Depends(get_current_principal)],
-        *,
+        principal: schemas.Principal | None = Depends(get_current_principal),
         _=Security(check_scopes, scopes=["admin:apikeys"]),
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         "Generate an API key for a Principal."
         request.state.endpoint = "auth"
@@ -1417,10 +1412,10 @@ def authentication_router() -> APIRouter:
     async def refresh_session(
         request: Request,
         refresh_token: schemas.RefreshToken,
-        settings: Annotated[Settings, Depends(get_settings)],
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        settings: Settings = Depends(get_settings),
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         "Obtain a new access token and refresh token."
         request.state.endpoint = "auth"
@@ -1432,10 +1427,10 @@ def authentication_router() -> APIRouter:
     async def revoke_session(
         request: Request,
         refresh_token: schemas.RefreshToken,
-        settings: Annotated[Settings, Depends(get_settings)],
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        settings: Settings = Depends(get_settings),
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         "Mark a Session as revoked so it cannot be refreshed again."
         request.state.endpoint = "auth"
@@ -1457,10 +1452,10 @@ def authentication_router() -> APIRouter:
     async def revoke_session_by_id(
         session_id: str,  # from path parameter
         request: Request,
-        principal: Annotated[schemas.Principal | None, Depends(get_current_principal)],
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        principal: schemas.Principal | None = Depends(get_current_principal),
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         "Mark a Session as revoked so it cannot be refreshed again."
         request.state.endpoint = "auth"
@@ -1551,12 +1546,11 @@ def authentication_router() -> APIRouter:
     async def new_apikey(
         request: Request,
         apikey_params: schemas.APIKeyRequestParams,
-        principal: Annotated[schemas.Principal | None, Depends(get_current_principal)],
-        *,
+        principal: schemas.Principal | None = Depends(get_current_principal),
         _=Security(check_scopes, scopes=["create:apikeys"]),
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         """
         Generate an API for the currently-authenticated user or service.
@@ -1579,10 +1573,10 @@ def authentication_router() -> APIRouter:
     @router.get("/apikey", response_model=schemas.APIKey)
     async def current_apikey_info(
         request: Request,
-        api_key: Annotated[str, Depends(get_api_key)],
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        api_key: str = Depends(get_api_key),
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         """
         Give info about the API key used to authentication the current request.
@@ -1617,12 +1611,11 @@ def authentication_router() -> APIRouter:
     async def revoke_apikey(
         request: Request,
         first_eight: str,
-        principal: Annotated[schemas.Principal | None, Depends(get_current_principal)],
-        *,
+        principal: schemas.Principal | None = Depends(get_current_principal),
         _=Security(check_scopes, scopes=["revoke:apikeys"]),
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         """
         Revoke an API belonging to the currently-authenticated user or service."""
@@ -1651,10 +1644,10 @@ def authentication_router() -> APIRouter:
     )
     async def whoami(
         request: Request,
-        principal: Annotated[schemas.Principal | None, Depends(get_current_principal)],
-        db_factory: Annotated[
-            Callable[[], AsyncSession | None], Depends(get_database_session_factory)
-        ],
+        principal: schemas.Principal | None = Depends(get_current_principal),
+        db_factory: Callable[[], AsyncSession | None] = Depends(
+            get_database_session_factory
+        ),
     ):
         # TODO Permit filtering the fields of the response.
         request.state.endpoint = "auth"

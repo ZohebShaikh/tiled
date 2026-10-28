@@ -330,7 +330,7 @@ class CachingMap(collections.abc.Mapping[K, V], Generic[K, V]):
 
     def __repr__(self) -> str:
         if self.__cache is None:
-            d = dict.fromkeys(self.__mapping, "<lazy>")
+            d = {k: "<lazy>" for k in self.__mapping}
         else:
             d = {}
             for k in self.__mapping:
@@ -374,7 +374,7 @@ def walk(tree, nodes=None):
         value = tree[nodes[-1]]
         if hasattr(value, "items"):
             yield nodes
-            for k, _v in value.items():
+            for k, v in value.items():
                 yield from walk(value, nodes + [k])
         else:
             yield nodes
@@ -406,7 +406,7 @@ def gen_tree(tree, nodes=None, last=None):
         if hasattr(value, "items"):
             yield _line(nodes, last)
             last_index = len(value) - 1
-            for index, (k, _v) in enumerate(value.items()):
+            for index, (k, v) in enumerate(value.items()):
                 yield from gen_tree(value, nodes + [k], last + [index == last_index])
         else:
             yield _line(nodes, last)
@@ -560,7 +560,7 @@ def expand_environment_variables(config: T) -> T:
         return {k: expand_environment_variables(v) for k, v in config.items()}  # type: ignore
     elif isinstance(config, str):
         return os.path.expandvars(config)
-    elif isinstance(config, list | tuple | builtins.set):
+    elif isinstance(config, (list, tuple, builtins.set)):
         return type(config)([expand_environment_variables(v) for v in config])
     else:
         return config
@@ -607,7 +607,7 @@ def safe_json_dump(content, *, auto_json_types=None):
                 # Give up on the numpy fast-path and convert to Python list.
                 # If the items in this list aren't serializable (e.g. bytes) we'll recurse on each item.
                 return content.tolist()
-            elif isinstance(content, bytes | numpy.bytes_):
+            elif isinstance(content, (bytes, numpy.bytes_)):
                 return content.decode("utf-8")
         raise TypeError
 
@@ -967,15 +967,15 @@ class IndexersMixin:
 
     @property
     def keys_indexer(self) -> Any:
-        warnings.warn(_MESSAGE.format(name="keys"), DeprecationWarning, stacklevel=2)
+        warnings.warn(_MESSAGE.format(name="keys"), DeprecationWarning)
         return self.keys()
 
     @property
     def values_indexer(self) -> Any:
-        warnings.warn(_MESSAGE.format(name="values"), DeprecationWarning, stacklevel=2)
+        warnings.warn(_MESSAGE.format(name="values"), DeprecationWarning)
         return self.values()
 
     @property
     def items_indexer(self) -> Any:
-        warnings.warn(_MESSAGE.format(name="items"), DeprecationWarning, stacklevel=2)
+        warnings.warn(_MESSAGE.format(name="items"), DeprecationWarning)
         return self.items()
