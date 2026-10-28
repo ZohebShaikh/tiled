@@ -148,8 +148,8 @@ def pagination_links(base_url, route, path_parts, page, next_cursor, length_hint
 
 
 @runtime_checkable
-class PaginatedContainerAdapter(Protocol):
-    "A container that supports cursor- and offset-based pagination."
+class KeysPaginatedAdapter(Protocol):
+    "A container that pages its keys by cursor or offset."
 
     async def cursor_for_offset(self, offset: int) -> Optional[int]: ...
 
@@ -157,13 +157,20 @@ class PaginatedContainerAdapter(Protocol):
         self, cursor: Optional[int] = None, limit: Optional[int] = None
     ) -> Tuple[List[str], Optional[int]]: ...
 
-    async def items_page(
-        self, cursor: Optional[int] = None, limit: Optional[int] = None
-    ) -> Tuple[List[Tuple[str, Any]], Optional[int]]: ...
-
     async def keys_range(
         self, offset: int = 0, limit: Optional[int] = None
     ) -> List[str]: ...
+
+
+@runtime_checkable
+class ItemsPaginatedAdapter(Protocol):
+    "A container that pages its items by cursor or offset."
+
+    async def cursor_for_offset(self, offset: int) -> Optional[int]: ...
+
+    async def items_page(
+        self, cursor: Optional[int] = None, limit: Optional[int] = None
+    ) -> Tuple[List[Tuple[str, Any]], Optional[int]]: ...
 
     async def items_range(
         self, offset: int = 0, limit: Optional[int] = None
@@ -283,7 +290,7 @@ async def construct_entries_response(
     next_cursor = None
     if fields == [schemas.EntryFields.none]:
         # Pull a page of just the keys, which is cheaper.
-        if isinstance(tree, PaginatedContainerAdapter):
+        if isinstance(tree, KeysPaginatedAdapter):
             if page.cursor is not None:
                 keys, next_cursor = await tree.keys_page(page.cursor, page.limit)
             else:
@@ -302,7 +309,7 @@ async def construct_entries_response(
         items = []
     else:
         # Pull the entire page of full items into memory.
-        if isinstance(tree, PaginatedContainerAdapter):
+        if isinstance(tree, ItemsPaginatedAdapter):
             if page.cursor is not None:
                 items, next_cursor = await tree.items_page(page.cursor, page.limit)
             else:

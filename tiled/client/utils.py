@@ -766,5 +766,8 @@ class StandaloneRetryIndicator:
             self._live.stop()
             self._live = None
         if self._label is not None:
-            self._label.close()
+            try:
+                self._label.close()
+            except Exception:
+                pass
             self._label = None

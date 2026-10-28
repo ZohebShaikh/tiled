@@ -46,7 +46,7 @@ from starlette.status import (
 )
 
 from tiled.access_control.scopes import NO_SCOPES, PUBLIC_SCOPES, SINGLE_USER_SCOPES
-from tiled.authenticators import OIDCAuthenticator, ProxiedOIDCAuthenticator
+from tiled.authenticators import ProxiedOIDCAuthenticator
 
 from ..access_control.protocols import normalize_access_tags
 from ..authn_database import orm
@@ -69,7 +69,12 @@ from .connection_pool import (
 )
 from .core import json_or_msgpack
 from .dependencies import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
-from .protocols import ExternalAuthenticator, InternalAuthenticator, UserSessionState
+from .protocols import (
+    ExternalAuthenticator,
+    InternalAuthenticator,
+    OAuth2Authorizer,
+    UserSessionState,
+)
 from .settings import Settings, get_settings
 from .utils import API_KEY_COOKIE_NAME, get_base_url
 
@@ -970,17 +975,17 @@ def add_external_routes(
             else:
                 return tokens
 
-    if isinstance(authenticator, OIDCAuthenticator):
+    if isinstance(authenticator, OAuth2Authorizer):
         _add_oidc_routes(router, provider, authenticator, templates)
 
 
 def _add_oidc_routes(
     router: APIRouter,
     provider: str,
-    authenticator: OIDCAuthenticator,
+    authenticator: OAuth2Authorizer,
     templates: Jinja2Templates,
 ):
-    "Build the OAuth2 authorization and device code routes for an OIDC Authenticator."
+    "Build the OAuth2 authorization and device code routes."
 
     @router.get(f"/provider/{provider}/authorize")
     async def authorize_redirect_route(

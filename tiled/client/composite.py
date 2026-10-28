@@ -112,10 +112,12 @@ class CompositeClient(Container):
         """Composite nodes can not include nested containers by design."""
         raise NotImplementedError("Cannot create a container within a composite node.")
 
-    def delete_contents(
+    # Keeps its original public signature, so external_only stays the second
+    # positional parameter; composites hold no containers, so the parent's
+    # recursive option does not apply.
+    def delete_contents(  # pyright: ignore[reportIncompatibleMethodOverride]
         self,
         keys: Optional[Union[str, Iterable[str]]] = None,
-        recursive: bool = False,
         external_only: bool = True,
     ) -> Self:
         """Delete the contents of this Composite node.
@@ -144,9 +146,7 @@ class CompositeClient(Container):
                 "accessor to the Container client to delete the entire table."
             )
 
-        return super().delete_contents(
-            keys, recursive=recursive, external_only=external_only
-        )
+        return super().delete_contents(keys, external_only=external_only)
 
     def read(self, variables=None, dim0=None):
         """Download the contents of a composite node as an xarray.Dataset.

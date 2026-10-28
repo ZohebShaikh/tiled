@@ -42,12 +42,6 @@ from starlette.status import (
 from tiled.adapters.protocols import AnyAdapter
 from tiled.adapters.utils import DataNotReadyError, ShapeMismatchError
 from tiled.authenticators import ProxiedOIDCAuthenticator
-from tiled.catalog.adapter import (
-    CatalogArrayAdapter,
-    CatalogNodeAdapter,
-    CatalogRaggedAdapter,
-    CatalogTableAdapter,
-)
 from tiled.media_type_registration import SerializationRegistry
 from tiled.query_registration import QueryRegistry
 from tiled.schemas import (
@@ -56,7 +50,11 @@ from tiled.schemas import (
     AboutAuthenticationLinks,
     AboutAuthenticationProvider,
 )
-from tiled.server.protocols import ExternalAuthenticator, InternalAuthenticator
+from tiled.server.protocols import (
+    ExternalAuthenticator,
+    InternalAuthenticator,
+    MetadataReplaceable,
+)
 from tiled.server.schemas import Principal
 
 from .. import __version__
@@ -1238,7 +1236,8 @@ def get_router(
             {StructureFamily.ragged},
             getattr(request.app.state, "access_policy", None),
         )
-        if not isinstance(entry, CatalogRaggedAdapter):
+        patch = getattr(entry, "patch", None)
+        if patch is None:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support patching ragged array data.",
@@ -1248,7 +1247,7 @@ def get_router(
         media_type = request.headers["content-type"]
         deserializer = deserialization_registry.dispatch("ragged", media_type)
         structure = await ensure_awaitable(
-            entry.patch,
+            patch,
             shape,
             offset,
             extend,
@@ -2226,12 +2225,13 @@ def get_router(
                     "go together; either all or none must be specified."
                 ),
             )
-        if not isinstance(entry, CatalogNodeAdapter):
+        put_data_source = getattr(entry, "put_data_source", None)
+        if put_data_source is None:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support data sources.",
             )
-        await entry.put_data_source(data_source=body.data_source, patch=patch)
+        await put_data_source(data_source=body.data_source, patch=patch)
 
     @router.delete("/metadata/{path:path}")
     async def delete(
@@ -2264,8 +2264,9 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )
-        if isinstance(entry, CatalogNodeAdapter):
-            await entry.delete(recursive=recursive, external_only=external_only)
+        delete = getattr(entry, "delete", None)
+        if delete is not None:
+            await delete(recursive=recursive, external_only=external_only)
         else:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
@@ -2298,7 +2299,8 @@ def get_router(
             getattr(request.app.state, "access_policy", None),
         )
         body = await request.body()
-        if not isinstance(entry, CatalogArrayAdapter):
+        write = getattr(entry, "write", None)
+        if write is None:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node cannot accept array data.",
@@ -2310,9 +2312,7 @@ def get_router(
             deserializer = deserialization_registry.dispatch("sparse", media_type)
         else:
             raise NotImplementedError(entry.structure_family)
-        await ensure_awaitable(
-            entry.write, media_type, deserializer, entry, body, persist
-        )
+        await ensure_awaitable(write, media_type, deserializer, entry, body, persist)
         return json_or_msgpack(request, None)
 
     @router.put("/array/block/{path:path}")
@@ -2340,7 +2340,8 @@ def get_router(
             {StructureFamily.array, StructureFamily.sparse},
             getattr(request.app.state, "access_policy", None),
         )
-        if not isinstance(entry, CatalogArrayAdapter):
+        write_block = getattr(entry, "write_block", None)
+        if write_block is None:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node cannot accept array data.",
@@ -2352,7 +2353,7 @@ def get_router(
             entry.structure_family, media_type
         )
         await ensure_awaitable(
-            entry.write_block, block, media_type, deserializer, entry, body, persist
+            write_block, block, media_type, deserializer, entry, body, persist
         )
         return json_or_msgpack(request, None)
 
@@ -2394,7 +2395,8 @@ def get_router(
             {StructureFamily.array},
             getattr(request.app.state, "access_policy", None),
         )
-        if not isinstance(entry, CatalogArrayAdapter):
+        patch = getattr(entry, "patch", None)
+        if patch is None:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node cannot accept array data.",
@@ -2404,7 +2406,7 @@ def get_router(
         media_type = request.headers["content-type"]
         deserializer = deserialization_registry.dispatch("array", media_type)
         structure = await ensure_awaitable(
-            entry.patch,
+            patch,
             shape,
             offset,
             extend,
@@ -2440,7 +2442,8 @@ def get_router(
             {StructureFamily.table},
             getattr(request.app.state, "access_policy", None),
         )
-        if not isinstance(entry, CatalogTableAdapter):
+        write = getattr(entry, "write", None)
+        if write is None:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support writing.",
@@ -2450,7 +2453,7 @@ def get_router(
         deserializer = deserialization_registry.dispatch(
             StructureFamily.table, media_type
         )
-        await ensure_awaitable(entry.write, media_type, deserializer, entry, body)
+        await ensure_awaitable(write, media_type, deserializer, entry, body)
         return json_or_msgpack(request, None)
 
     @router.put("/table/partition/{path:path}")
@@ -2477,7 +2480,8 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )
-        if not isinstance(entry, CatalogTableAdapter):
+        write_partition = getattr(entry, "write_partition", None)
+        if write_partition is None:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not supporting writing a partition.",
@@ -2488,7 +2492,7 @@ def get_router(
             StructureFamily.table, media_type
         )
         await ensure_awaitable(
-            entry.write_partition, media_type, deserializer, entry, body, partition
+            write_partition, media_type, deserializer, entry, body, partition
         )
         return json_or_msgpack(request, None)
 
@@ -2516,7 +2520,8 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )
-        if not isinstance(entry, CatalogTableAdapter):
+        append_partition = getattr(entry, "append_partition", None)
+        if append_partition is None:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not supporting writing a partition.",
@@ -2527,7 +2532,7 @@ def get_router(
             StructureFamily.table, media_type
         )
         await ensure_awaitable(
-            entry.append_partition, media_type, deserializer, entry, body, partition
+            append_partition, media_type, deserializer, entry, body, partition
         )
         return json_or_msgpack(request, None)
 
@@ -2603,7 +2608,7 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )
-        if not isinstance(entry, CatalogNodeAdapter):
+        if not isinstance(entry, MetadataReplaceable):
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support update of metadata.",
@@ -2675,7 +2680,13 @@ def get_router(
         # JSON Patch "add"/"replace" operations may have inserted raw
         # {"name": ..., "version": ...} dicts (from the patch's "value"
         # field) alongside untouched Spec instances; normalize to Spec.
-        specs = [spec if isinstance(spec, Spec) else Spec(**spec) for spec in specs]
+        try:
+            specs = [spec if isinstance(spec, Spec) else Spec(**spec) for spec in specs]
+        except TypeError:
+            raise HTTPException(
+                status_code=HTTP_422_UNPROCESSABLE_CONTENT,
+                detail='specs patch must produce {"name": ..., "version": ...} items',
+            )
 
         # Manually validate limits that bypass pydantic validation via patch
         if len(specs) > schemas.MAX_ALLOWED_SPECS:
@@ -2758,7 +2769,7 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )
-        if not isinstance(entry, CatalogNodeAdapter):
+        if not isinstance(entry, MetadataReplaceable):
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support update of metadata.",
@@ -2889,13 +2900,14 @@ def get_router(
             None,
             getattr(request.app.state, "access_policy", None),
         )
-        if not isinstance(entry, CatalogNodeAdapter):
+        delete_revision = getattr(entry, "delete_revision", None)
+        if delete_revision is None:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support a del request for revisions.",
             )
 
-        await entry.delete_revision(number)
+        await delete_revision(number)
         return json_or_msgpack(request, None)
 
     @router.get("/asset/bytes/{path:path}")
@@ -2932,13 +2944,14 @@ def get_router(
                     "downloading raw assets."
                 ),
             )
-        if not isinstance(entry, CatalogNodeAdapter):
+        asset_by_id = getattr(entry, "asset_by_id", None)
+        if asset_by_id is None:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="This node does not support downloading assets.",
             )
 
-        asset = await entry.asset_by_id(id)
+        asset = await asset_by_id(id)
         if asset is None:
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND,

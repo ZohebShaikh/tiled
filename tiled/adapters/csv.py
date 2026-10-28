@@ -218,7 +218,7 @@ class CSVAdapter(Adapter[TableStructure]):
     def get(self, key: str) -> Union[ArrayAdapter, None]:
         if key not in self.structure().columns:
             return None
-        return ArrayAdapter.from_array(self.read([key])[key].to_numpy())
+        return ArrayAdapter.from_array(self.read([key])[key].values)
 
     def generate_data_sources(
         self,
@@ -249,7 +249,7 @@ class CSVAdapter(Adapter[TableStructure]):
 
     def __getitem__(self, key: str) -> ArrayAdapter:
         # Must compute to determine shape.
-        return ArrayAdapter.from_array(self.read([key])[key].to_numpy())
+        return ArrayAdapter.from_array(self.read([key])[key].values)
 
     def items(self) -> Iterator[Tuple[str, ArrayAdapter]]:
         """Iterator over table columns
@@ -259,7 +259,7 @@ class CSVAdapter(Adapter[TableStructure]):
         Tuples of column names and corresponding ArrayAdapters
         """
         yield from (
-            (key, ArrayAdapter.from_array(self.read([key])[key].to_numpy()))
+            (key, ArrayAdapter.from_array(self.read([key])[key].values))
             for key in self._structure.columns
         )
 

@@ -30,6 +30,22 @@ class IterViewBase:
     def __getitem__(self, index_or_slice):
         raise NotImplementedError
 
+    # The first constructor argument is the mapping being viewed or, as
+    # originally documented, a zero-argument callable returning its length.
+    # Both are supported.
+
+    def __len__(self):
+        source = getattr(self, "_mapping")
+        if isinstance(source, collections.abc.Sized):
+            return len(source)
+        return source()
+
+    def __contains__(self, item):
+        if isinstance(getattr(self, "_mapping"), collections.abc.Mapping):
+            # The collections.abc view that follows in each subclass's MRO.
+            return getattr(super(), "__contains__")(item)
+        return any(element == item for element in self)
+
     def __init_subclass__(cls, *args, **kwargs):
         cls.first.__doc__ = f"Get the first {cls._name}."
         cls.last.__doc__ = f"Get the last {cls._name}."
