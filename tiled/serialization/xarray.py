@@ -8,7 +8,6 @@ from .table import (
     XLSX_MIME_TYPE,
     serialize_arrow,
     serialize_csv,
-    serialize_excel,
     serialize_html,
     serialize_parquet,
 )
@@ -89,9 +88,14 @@ async def serialize_dataset_html(mimetype, node, metadata, filter_for_access):
     return serialize_html(mimetype, (await as_dataset(node)).to_dataframe(), metadata)
 
 
-@default_serialization_registry.register("xarray_dataset", XLSX_MIME_TYPE)
-async def serialize_dataset_excel(mimetype, node, metadata, filter_for_access):
-    return serialize_excel(mimetype, (await as_dataset(node)).to_dataframe(), metadata)
+if modules_available("openpyxl", "pandas"):
+    from .table import serialize_excel
+
+    @default_serialization_registry.register("xarray_dataset", XLSX_MIME_TYPE)
+    async def serialize_dataset_excel(mimetype, node, metadata, filter_for_access):
+        return serialize_excel(
+            mimetype, (await as_dataset(node)).to_dataframe(), metadata
+        )
 
 
 if modules_available("orjson"):

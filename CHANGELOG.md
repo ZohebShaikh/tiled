@@ -41,6 +41,7 @@ Write the date in place of the "Unreleased" in the case a new version is release
 
 ### Fixed
 
+- Without `openpyxl` installed, registering the built-in serializers failed (the xarray module imported `serialize_excel` unconditionally) and the JSON table serializer raised `NameError` for `pandas`.
 - Fixed `ArrayClient.patch` on arrays whose shape is not a whole number of
   chunks. The check for writing past the end, and the new shape after
   `extend=True`, used the Zarr array's shape, which is rounded up to whole

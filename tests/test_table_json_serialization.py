@@ -4,6 +4,8 @@ orjson cannot handle natively (numpy scalars, pd.NA, NaT, Timestamp).
 
 import io
 import json
+import subprocess
+import sys
 
 import numpy
 import pandas
@@ -179,3 +181,23 @@ def test_bytes_column(media_type):
     else:
         col = json.loads(output)["bytes_col"]
     assert col == ["abc", "café", "ÿþ"]
+
+
+def test_json_serializer_without_openpyxl():
+    "The JSON table serializer must not rely on the Excel block importing pandas."
+    code = """
+import sys
+sys.modules["openpyxl"] = None  # simulate openpyxl not being installed
+import pandas
+from tiled.media_type_registration import default_serialization_registry
+from tiled.serialization import register_builtin_serializers
+register_builtin_serializers()
+serialize = default_serialization_registry.dispatch("table", "application/json")
+df = pandas.DataFrame({"t": pandas.to_datetime(["2024-01-01", "NaT"])})
+print(bytes(serialize("application/json", df, {})).decode())
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"t": ["2024-01-01T00:00:00", None]}

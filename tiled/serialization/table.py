@@ -109,6 +109,7 @@ if modules_available("openpyxl", "pandas"):
 
 if modules_available("orjson"):
     import orjson
+    import pandas
 
     def _series_to_json_safe(series):
         """Convert a pandas Series to a list of JSON-serializable Python values.
