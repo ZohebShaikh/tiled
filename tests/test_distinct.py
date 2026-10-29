@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 
 import numpy as np
@@ -207,3 +208,23 @@ async def test_distinct_on_deep_variation_covers_all_descendants(catalog_client)
     a = await catalog.lookup_adapter(["a"])
     distinct = await a.search_deep().get_distinct(["m"], False, False, True)
     assert _values(distinct) == [("b", 1), ("deep", 1), ("inside", 1)]
+
+
+def test_catalog_node_with_data_sources_delegates_distinct():
+    "A catalog node backed by data sources asks its adapter for distinct values."
+    from types import SimpleNamespace
+
+    from tiled.catalog.adapter import CatalogContainerAdapter
+
+    backing = MapAdapter({"a": MapAdapter({}, metadata={"color": "red"})})
+
+    async def get_adapter():
+        return backing
+
+    node = SimpleNamespace(
+        node=SimpleNamespace(data_sources=[object()]), get_adapter=get_adapter
+    )
+    distinct = asyncio.run(
+        CatalogContainerAdapter.get_distinct(node, ["color"], False, False, True)
+    )
+    assert distinct["metadata"]["color"] == [{"value": "red", "count": 1}]

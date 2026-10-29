@@ -1064,8 +1064,12 @@ class CatalogNodeAdapter:
 
     async def get_distinct(self, metadata, structure_families, specs, counts):
         if self.node.data_sources:
-            return (await self.get_adapter()).get_disinct(
-                metadata, structure_families, specs, counts
+            return await ensure_awaitable(
+                (await self.get_adapter()).get_distinct,
+                metadata,
+                structure_families,
+                specs,
+                counts,
             )
         data = {}
 
