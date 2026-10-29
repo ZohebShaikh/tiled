@@ -1313,3 +1313,15 @@ def test_column_name_too_long(data_uri: str, request: pytest.FixtureRequest) -> 
         r'return_an_exception_because_it_is_over_sixty_three_characters": max bytes is 63+',
     ):
         SQLAdapter.init_storage(data_source=data_source, storage=storage)
+
+
+def test_primary_key_without_order_by_args(
+    sqlite_uri: str,
+    data_source_from_init_storage: Callable[..., DataSource[TableStructure]],
+) -> None:
+    """primary_key alone must not depend on a loop variable from order_by_args."""
+    data_source = data_source_from_init_storage(
+        sqlite_uri, 1, _ts_val_schema.empty_table(), {"primary_key": ["ts"]}
+    )
+    adapter = adapter_from_data_source(data_source, primary_key=["ts"])
+    assert adapter.primary_key == ["ts"]
