@@ -919,3 +919,11 @@ def test_files_opened_and_closed(example_files_with_chunked_arrays, swmr):
 
     h5py.File(file_paths[0], "r", swmr=not swmr).close()
     h5py.File(file_paths[1], "r", swmr=not swmr).close()
+
+
+def test_nexus_example_serves_data():
+    "The tiled.examples.nexus tree, used by example configs, can be served and read."
+    from tiled.examples.nexus import build_tree
+
+    client = from_context(Context.from_app(build_app(build_tree())))
+    assert len(client["entry"]["program_name"].read()) == 1

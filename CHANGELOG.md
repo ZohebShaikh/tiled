@@ -41,6 +41,7 @@ Write the date in place of the "Unreleased" in the case a new version is release
 
 ### Fixed
 
+- Serving `tiled.examples.nexus` (used by the `multiple_providers` and `saml` example configs) failed on the first read, because it passed an open `h5py.File` where `HDF5Adapter` expects a parsed tree and file URIs.
 - Fixed `ArrayClient.patch` on arrays whose shape is not a whole number of
   chunks. The check for writing past the end, and the new shape after
   `extend=True`, used the Zarr array's shape, which is rounded up to whole
