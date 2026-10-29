@@ -5,7 +5,7 @@ See profiles.py for client configuration.
 """
 
 import copy
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
@@ -35,7 +35,7 @@ from .server.settings import get_settings
 from .server.utils import normalize_root_path
 from .structures.core import Spec
 from .type_aliases import EntryPointString
-from .utils import parse, prepend_to_sys_path
+from .utils import import_object, parse, prepend_to_sys_path
 from .validation_registration import ValidationRegistry, default_validation_registry
 
 TREE_ALIASES = {"catalog": "tiled.catalog:from_uri"}
@@ -123,18 +123,57 @@ class TreeSpec(BaseModel):
         return TREE_ALIASES.get(value, value)
 
 
+def _typed_spec(value: Any, key: str, args: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalize the two accepted forms of a pluggable object's configuration.
+
+    Either ``{<key>: "pkg.module:Class", "args": {...}}`` or, equivalently,
+    ``{<key>: {"type": "pkg.module:Class", ...}}`` with the arguments inline.
+    """
+    if isinstance(value, Mapping):
+        if args:
+            raise ValueError(
+                "Give arguments either inline with 'type' or in 'args', not both."
+            )
+        if "type" not in value:
+            raise ValueError(f"'{key}' must specify a 'type'.")
+        return dict(value)
+    return {"type": value, **(args or {})}
+
+
 class AuthenticationProviderSpec(BaseModel):
     provider: str
-    authenticator: EntryPointString
-    args: dict[str, Any] | None = None
+    authenticator: InternalAuthenticator | ExternalAuthenticator
 
-    def into_auth_entry(
-        self,
-    ) -> tuple[str, InternalAuthenticator | ExternalAuthenticator]:
-        auth = self.authenticator(**(self.args or {}))
-        if not isinstance(auth, (InternalAuthenticator, ExternalAuthenticator)):
-            raise ValueError(f"Type {auth.__class__} is not a known authenticator type")
-        return (self.provider, auth)
+    @model_validator(mode="before")
+    @classmethod
+    def inline_args(cls, data: Any) -> Any:
+        if isinstance(data, Mapping) and "authenticator" in data:
+            data = dict(data)
+            if not isinstance(
+                data["authenticator"], (InternalAuthenticator, ExternalAuthenticator)
+            ):
+                data["authenticator"] = _typed_spec(
+                    data["authenticator"], "authenticator", data.pop("args", None)
+                )
+        return data
+
+    @field_validator("authenticator", mode="before")
+    @classmethod
+    def build_authenticator(cls, value: Any) -> Any:
+        if not isinstance(value, Mapping):
+            return value  # Already an instance.
+        args = dict(value)
+        authenticator_type = import_object(args.pop("type"))
+        if not (
+            isinstance(authenticator_type, type)
+            and issubclass(
+                authenticator_type, (InternalAuthenticator, ExternalAuthenticator)
+            )
+        ):
+            raise ValueError(f"{authenticator_type!r} is not an authenticator type")
+        # Validation errors here are reported at this field's location,
+        # e.g. authentication.providers.0.authenticator.users_to_passwords
+        return authenticator_type.model_validate(args)
 
 
 class TiledAdmin(BaseModel):
@@ -163,11 +202,11 @@ class Authentication(BaseSettings):
                 raise ValueError("Authenticator provider names must be unique")
         return value or []
 
-    @cached_property
+    @property
     def authenticators(
         self,
     ) -> dict[str, InternalAuthenticator | ExternalAuthenticator]:
-        return dict(auth.into_auth_entry() for auth in self.providers or ())
+        return {spec.provider: spec.authenticator for spec in self.providers or ()}
 
     @model_validator(mode="after")
     def validate_authenticators(self):
@@ -205,10 +244,22 @@ class Database(BaseSettings):
 
 class AccessControl(BaseSettings):
     access_policy: EntryPointString
-    args: dict[str, Any] | None
+    args: dict[str, Any] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def inline_args(cls, data: Any) -> Any:
+        # Also accept {"type": "pkg.module:Policy", ...args} (no 'access_policy').
+        if isinstance(data, Mapping) and "type" in data and "access_policy" not in data:
+            args = dict(data)
+            return {"access_policy": args.pop("type"), "args": args}
+        return data
 
     def build(self):
-        return self.access_policy(**(self.args or {}))
+        try:
+            return self.access_policy(**(self.args or {}))
+        except TypeError as err:
+            raise ValueError(f"Invalid arguments for {self.access_policy!r}: {err}")
 
     model_config = SettingsConfigDict(env_prefix="TILED_ACCESS_CONTROL")
     settings_customise_sources = classmethod(settings_customise_sources)

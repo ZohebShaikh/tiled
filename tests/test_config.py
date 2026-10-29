@@ -211,6 +211,7 @@ def test_duplicate_auth_providers():
                         {
                             "provider": "one",
                             "authenticator": "tiled.authenticators:DictionaryAuthenticator",
+                            "args": {"users_to_passwords": {}},
                         },
                     ]
                 }
@@ -421,3 +422,107 @@ def test_uvicorn_root_path_absent_is_left_alone():
     )
     assert config.root_path == ""
     assert "root_path" not in config.uvicorn
+
+
+DICTIONARY_AUTHENTICATOR = "tiled.authenticators:DictionaryAuthenticator"
+DUMMY_ACCESS_POLICY = "tiled.access_control.access_policies:DummyAccessPolicy"
+
+
+def _config(**extra: Any) -> dict[str, Any]:
+    return {"trees": [{"tree": f"{__name__}:tree", "path": "/"}], **extra}
+
+
+@pytest.mark.parametrize(
+    "provider",
+    [
+        # import path + 'args' (the established form)
+        {
+            "authenticator": DICTIONARY_AUTHENTICATOR,
+            "args": {"users_to_passwords": {"a": "b"}},
+        },
+        # import path as 'type', arguments inline
+        {
+            "authenticator": {
+                "type": DICTIONARY_AUTHENTICATOR,
+                "users_to_passwords": {"a": "b"},
+            }
+        },
+    ],
+)
+def test_authenticator_spec_forms(provider: dict[str, Any]):
+    config = Config.model_validate(
+        _config(authentication={"providers": [{"provider": "toy", **provider}]})
+    )
+    (authenticator,) = config.authentication.authenticators.values()
+    assert authenticator.users_to_passwords == {"a": "b"}
+
+
+def test_authenticator_args_errors_are_located():
+    with pytest.raises(ValidationError) as exc_info:
+        Config.model_validate(
+            _config(
+                authentication={
+                    "providers": [
+                        {
+                            "provider": "toy",
+                            "authenticator": DICTIONARY_AUTHENTICATOR,
+                            "args": {"users_to_password": {"a": "b"}},  # typo
+                        }
+                    ]
+                }
+            )
+        )
+    locations = {error["loc"] for error in exc_info.value.errors()}
+    assert (
+        "authentication",
+        "providers",
+        0,
+        "authenticator",
+        "users_to_password",
+    ) in locations
+
+
+def test_authenticator_type_must_be_an_authenticator():
+    with pytest.raises(ValidationError, match="is not an authenticator type"):
+        Config.model_validate(
+            _config(
+                authentication={
+                    "providers": [
+                        {"provider": "x", "authenticator": f"{__name__}:tree"}
+                    ]
+                }
+            )
+        )
+
+
+def test_authenticator_args_given_twice():
+    with pytest.raises(ValidationError, match="not both"):
+        Config.model_validate(
+            _config(
+                authentication={
+                    "providers": [
+                        {
+                            "provider": "x",
+                            "authenticator": {"type": DICTIONARY_AUTHENTICATOR},
+                            "args": {"users_to_passwords": {}},
+                        }
+                    ]
+                }
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "access_control",
+    [{"access_policy": DUMMY_ACCESS_POLICY, "args": {}}, {"type": DUMMY_ACCESS_POLICY}],
+)
+def test_access_control_spec_forms(access_control: dict[str, Any]):
+    config = Config.model_validate(_config(access_control=access_control))
+    assert type(config.access_policy).__name__ == "DummyAccessPolicy"
+
+
+def test_access_control_bad_args_is_a_validation_error():
+    with pytest.raises(ValidationError, match="Invalid arguments"):
+        Config.model_validate(
+            _config(access_control={"type": DUMMY_ACCESS_POLICY, "bogus": 1})
+        )
