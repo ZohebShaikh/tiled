@@ -3,6 +3,8 @@ import collections.abc
 import pathlib
 import threading
 import warnings
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import httpx2 as httpx
@@ -10,12 +12,17 @@ import httpx2 as httpx
 from ..utils import import_object, prepend_to_sys_path
 from .container import DEFAULT_STRUCTURE_CLIENT_DISPATCH, Container
 from .context import DEFAULT_TIMEOUT_PARAMS, MAX_CONCURRENT_CONNECTIONS, UNSET, Context
-from .utils import MSGPACK_MIME_TYPE, client_for_item, handle_error, retry_context
+from .utils import (
+    MSGPACK_MIME_TYPE,
+    client_for_item,
+    handle_error,
+    retry_call,
+)
 
 
 def from_uri(
     uri,
-    structure_clients="numpy",
+    structure_clients: str | Mapping[str, Any] = "numpy",
     *,
     cache=UNSET,
     remember_me=True,
@@ -120,7 +127,7 @@ For non-interactive authentication, use an API key or add custom auth
 
 def from_context(
     context: Context,
-    structure_clients="numpy",
+    structure_clients: str | Mapping[str, Any] = "numpy",
     node_path_parts=None,
     include_data_sources=False,
     remember_me=True,
@@ -167,18 +174,18 @@ def from_context(
                 context.authenticate(remember_me=remember_me)
     # Context ensures that context.api_uri has a trailing slash.
     item_uri = f"{context.api_uri}metadata/{'/'.join(node_path_parts)}"
-    params = parse_qs(urlparse(item_uri).query)
+    params: dict[str, Any] = {**parse_qs(urlparse(item_uri).query)}
     if include_data_sources:
         params["include_data_sources"] = include_data_sources
-    for attempt in retry_context():
-        with attempt:
-            content = handle_error(
-                context.http_client.get(
-                    item_uri,
-                    headers={"Accept": MSGPACK_MIME_TYPE},
-                    params=params,
-                )
-            ).json()
+    content = retry_call(
+        lambda: handle_error(
+            context.http_client.get(
+                item_uri,
+                headers={"Accept": MSGPACK_MIME_TYPE},
+                params=params,
+            )
+        ).json(),
+    )
     item = content["data"]
     return client_for_item(
         context, structure_clients, item, include_data_sources=include_data_sources
@@ -336,4 +343,4 @@ SERVERS = []  # servers spawned using simple
 # mechanism that runs at interpreter shutdown.
 # We need to intervene at that layer to close the portal, or else
 # we will wait forever for a thread run by the portal to join().
-threading._register_atexit(_cleanup_servers)
+getattr(threading, "_register_atexit")(_cleanup_servers)

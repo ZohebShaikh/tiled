@@ -7,9 +7,12 @@ from urllib.parse import parse_qs, urlparse
 import dask
 import dask.dataframe
 import httpx2 as httpx
+from dask.delayed import delayed
 
 from ..serialization.table import deserialize_arrow, serialize_arrow
-from ..utils import APACHE_ARROW_FILE_MIME_TYPE, UNCHANGED
+from ..structures.root import Structure
+from ..structures.table import TableStructure
+from ..utils import APACHE_ARROW_FILE_MIME_TYPE, UNCHANGED, Sentinel
 from .base import BaseClient
 from .utils import (
     MSGPACK_MIME_TYPE,
@@ -17,6 +20,7 @@ from .utils import (
     client_for_item,
     export_util,
     handle_error,
+    retry_call,
     retry_context,
     should_retry_if_unprocessed,
 )
@@ -30,8 +34,15 @@ _EXTRA_CHARS_PER_ITEM = len("&column=")
 class _DaskDataFrameClient(BaseClient):
     "Client-side wrapper around an dataframe-like that returns dask dataframes"
 
-    def new_variation(self, structure=UNCHANGED, **kwargs):
-        if structure is UNCHANGED:
+    def structure(self) -> TableStructure:
+        structure = super().structure()
+        assert isinstance(structure, TableStructure)
+        return structure
+
+    def new_variation(
+        self, *, structure: Structure | None | Sentinel = UNCHANGED, **kwargs
+    ):
+        if isinstance(structure, Sentinel):
             structure = self._structure
         return super().new_variation(structure=structure, **kwargs)
 
@@ -122,30 +133,32 @@ class _DaskDataFrameClient(BaseClient):
         )
         with self.context.throttle():
             if url_length_for_get_request > self.URL_CHARACTER_LIMIT:
-                for attempt in retry_context(self.context):
-                    with attempt:
-                        content = handle_error(
-                            self.context.http_client.post(
-                                URL_PATH,
-                                headers={"Accept": APACHE_ARROW_FILE_MIME_TYPE},
-                                json=columns,
-                                params=params,
-                            )
-                        ).read()
+                content = retry_call(
+                    lambda: handle_error(
+                        self.context.http_client.post(
+                            URL_PATH,
+                            headers={"Accept": APACHE_ARROW_FILE_MIME_TYPE},
+                            json=columns,
+                            params=params,
+                        )
+                    ).read(),
+                    self.context,
+                )
             else:
                 if columns:
                     # Note: The singular/plural inconsistency here is because
                     # ["A", "B"] will be encoded in the URL as column=A&column=B
                     params["column"] = columns
-                for attempt in retry_context(self.context):
-                    with attempt:
-                        content = handle_error(
-                            self.context.http_client.get(
-                                URL_PATH,
-                                headers={"Accept": APACHE_ARROW_FILE_MIME_TYPE},
-                                params=params,
-                            )
-                        ).read()
+                content = retry_call(
+                    lambda: handle_error(
+                        self.context.http_client.get(
+                            URL_PATH,
+                            headers={"Accept": APACHE_ARROW_FILE_MIME_TYPE},
+                            params=params,
+                        )
+                    ).read(),
+                    self.context,
+                )
         if (ps := self.context.progress_state) is not None:
             ps.advance()
         return deserialize_arrow(content)
@@ -167,7 +180,7 @@ class _DaskDataFrameClient(BaseClient):
         # so `divisions` must have length len(dfs) + 1 == 2 regardless of how many
         # partitions the full dataset has.
         return dask.dataframe.from_delayed(
-            [dask.delayed(self._get_partition)(partition, columns)],
+            [delayed(self._get_partition)(partition, columns)],
             meta=meta,
             divisions=(None, None),
         )
@@ -208,14 +221,14 @@ class _DaskDataFrameClient(BaseClient):
             self_link = self.item["links"]["self"]
             if self_link.endswith("/"):
                 self_link = self_link[:-1]
-            for attempt in retry_context():
-                with attempt:
-                    content = handle_error(
-                        self.context.http_client.get(
-                            self_link + f"/{column}",
-                            headers={"Accept": MSGPACK_MIME_TYPE},
-                        )
-                    ).json()
+            content = retry_call(
+                lambda: handle_error(
+                    self.context.http_client.get(
+                        self_link + f"/{column}",
+                        headers={"Accept": MSGPACK_MIME_TYPE},
+                    )
+                ).json(),
+            )
         except ClientError as err:
             if err.response.status_code == httpx.codes.NOT_FOUND:
                 raise KeyError(column)

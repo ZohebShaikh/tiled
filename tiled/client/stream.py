@@ -4,7 +4,7 @@ import inspect
 import logging
 import threading
 import weakref
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, Generic, Self, TypeVar
 
 import anyio
@@ -38,7 +38,7 @@ from .utils import (
     client_for_item,
     handle_error,
     normalize_specs,
-    retry_context,
+    retry_call,
 )
 
 T = TypeVar("T")
@@ -89,6 +89,8 @@ class _TestClientWebsocketWrapper:
         # we do not want a server dependency in the client.
         import starlette.websockets
 
+        if self._websocket is None:
+            raise RuntimeError("Websocket is not connected.")
         try:
             return self._websocket.receive_bytes()
         except starlette.websockets.WebSocketDisconnect:
@@ -130,14 +132,21 @@ class _RegularWebsocketWrapper:
 
     def recv(self, timeout=None):
         """Receive data from websocket with consistent interface."""
+        if self._websocket is None:
+            raise RuntimeError("Websocket is not connected.")
         try:
-            return self._websocket.recv(timeout=timeout)
+            data = self._websocket.recv(timeout=timeout)
         except websockets.exceptions.ConnectionClosedOK:
             return None
+        # The server sends msgpack in binary frames, which arrive as bytes.
+        # (recv(decode=False) would say so directly but needs websockets>=13.)
+        assert isinstance(data, bytes)
+        return data
 
     def close(self):
         """Close websocket connection."""
-        self._websocket.close()
+        if self._websocket is not None:
+            self._websocket.close()
 
 
 class CallbackRegistry(Generic[T]):
@@ -153,7 +162,7 @@ class CallbackRegistry(Generic[T]):
 
     def __init__(self, executor: concurrent.futures.Executor):
         self._executor = executor
-        self._callbacks: set[T] = set()
+        self._callbacks: set[weakref.ref[Callback[T]]] = set()
 
     @property
     def executor(self):
@@ -227,6 +236,7 @@ class CallbackRegistry(Generic[T]):
         else:
             ref = weakref.ref(callback, cleanup)
         self._callbacks.add(ref)
+        return self
 
     def remove_callback(self, callback: Callback[T]) -> Self:
         """
@@ -240,7 +250,12 @@ class CallbackRegistry(Generic[T]):
         -------
         Subscription
         """
-        self._callbacks.remove(callback)
+        # Weak references compare equal when their referents are equal.
+        if inspect.ismethod(callback):
+            self._callbacks.remove(weakref.WeakMethod(callback))
+        else:
+            self._callbacks.remove(weakref.ref(callback))
+        return self
 
 
 class Subscription(abc.ABC):
@@ -370,8 +385,8 @@ class Subscription(abc.ABC):
         # Reset schema so first message on new connection is parsed as schema
         self._schema = None
 
-        needs_api_key = self.context.server_info.authentication.providers
-        if needs_api_key:
+        key_info = None
+        if self.context.server_info.authentication.providers:
             # Request a short-lived API key to use for authenticating the WS connection.
             key_info = self.context.create_api_key(
                 expires_in=API_KEY_LIFETIME, note="websocket"
@@ -385,7 +400,7 @@ class Subscription(abc.ABC):
         self._websocket.connect(api_key, start, max_size=max_size)
         self._connected_event.set()
 
-        if needs_api_key:
+        if key_info is not None:
             # The connection is made, so we no longer need the API key.
             # TODO: Implement single-use API keys so that revoking is not
             # necessary.
@@ -421,7 +436,7 @@ class Subscription(abc.ABC):
             self.process(update)
 
     @abc.abstractmethod
-    def process(self, *args) -> None:
+    def process(self, update: Update) -> None:
         pass
 
     def start(self, start: int | None = None, max_size: int = 1_000_000) -> None:
@@ -555,7 +570,7 @@ class ContainerSubscription(Subscription):
         context: Context,
         segments: list[str] | None = None,
         executor: concurrent.futures.Executor | None = None,
-        structure_clients: dict | None = None,
+        structure_clients: Mapping[str, Any] | None = None,
     ):
         super().__init__(context, segments, executor)
         self.structure_clients = structure_clients
@@ -567,9 +582,9 @@ class ContainerSubscription(Subscription):
         )
 
     def process(self, update: Update):
-        if update.type == "container-child-created":
+        if isinstance(update, LiveChildCreated):
             self.child_created.process(update)
-        elif update.type == "container-child-metadata-updated":
+        elif isinstance(update, LiveChildMetadataUpdated):
             self.child_metadata_updated.process(update)
         else:
             raise RuntimeError(f"Received update with unexpected type: {update}")
@@ -602,6 +617,8 @@ class ArraySubscription(Subscription):
         )
 
     def process(self, update: Update):
+        if not isinstance(update, (LiveArrayData, LiveArrayRef)):
+            raise RuntimeError(f"Received update with unexpected type: {update}")
         self.new_data.process(update)
 
 
@@ -630,6 +647,8 @@ class TableSubscription(Subscription):
         self.new_data: CallbackRegistry[LiveTableData] = CallbackRegistry(self.executor)
 
     def process(self, update: Update):
+        if not isinstance(update, LiveTableData):
+            raise RuntimeError(f"Received update with unexpected type: {update}")
         self.new_data.process(update)
 
 
@@ -747,14 +766,17 @@ class LiveArrayRef(ArrayRef):
         "Fetch array"
         import numpy
 
-        for attempt in retry_context():
-            with attempt:
-                content = handle_error(
-                    self.subscription.context.http_client.get(
-                        self.uri,
-                        headers={"Accept": "application/octet-stream"},
-                    )
-                ).read()
+        if self.uri is None:
+            raise ValueError("This update does not reference fetchable data.")
+        uri = self.uri
+        content = retry_call(
+            lambda: handle_error(
+                self.subscription.context.http_client.get(
+                    uri,
+                    headers={"Accept": "application/octet-stream"},
+                )
+            ).read(),
+        )
         # Decode payload (bytes) into array.
         numpy_dtype = self.data_type.to_numpy_dtype()
         if self.patch:

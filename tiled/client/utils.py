@@ -4,10 +4,11 @@ import os
 import sys
 import uuid
 from collections import defaultdict
-from collections.abc import Hashable
+from collections.abc import Callable, Hashable
 from dataclasses import asdict
 from pathlib import Path
 from threading import Lock
+from typing import TYPE_CHECKING, TypeVar
 from urllib.parse import parse_qs, urlparse
 from weakref import WeakValueDictionary
 
@@ -19,6 +20,10 @@ import stamina.instrumentation
 from ..structures.core import Spec
 from ..type_aliases import Chunks
 from ..utils import path_from_uri
+
+if TYPE_CHECKING:
+    from ipywidgets import Label
+    from rich.live import Live
 
 # Disable stamina's default retry logging hook.  Tiled handles its own retry
 # messages via the _LoggingAttempt wrapper (routed to tiled.client at DEBUG).
@@ -78,7 +83,7 @@ def raise_for_status(response) -> None:
     raise httpx.HTTPStatusError(message, request=request, response=response)
 
 
-def handle_error(response):
+def handle_error(response: httpx.Response) -> httpx.Response:
     if not response.is_error:
         return response
     try:
@@ -106,6 +111,8 @@ def handle_error(response):
             raise ClientError(message, exc.request, exc.response) from exc
         else:
             raise
+    # response.is_error (checked above) implies raise_for_status() always raises.
+    raise AssertionError("unreachable")
 
 
 class ClientError(httpx.HTTPStatusError):
@@ -290,6 +297,23 @@ def retry_context(context=None, *, on=None):
             context.signal_retry_resolved()
 
 
+T = TypeVar("T")
+
+
+def retry_call(fn: Callable[[], T], context=None, *, on=None) -> T:
+    """Call `fn` under `retry_context` and return its result.
+
+    Prefer this over a bare `for attempt in retry_context(): with attempt:`
+    loop when the result is needed afterwards: the loop form cannot prove to
+    a type checker that the assignment inside it happened.
+    """
+    for attempt in retry_context(context, on=on):
+        with attempt:
+            return fn()
+    # stamina re-raises the last error once attempts are exhausted.
+    raise AssertionError("unreachable")
+
+
 def should_poll_for_tokens(exception: Exception) -> bool:
     # Retry on transient network errors during device flow polling.
     if isinstance(exception, (httpx.ConnectError, httpx.TimeoutException)):
@@ -307,13 +331,13 @@ def polling_retry_context(timeout: float):
 
 
 class TiledResponse(httpx.Response):
-    def json(self):
+    def json(self, **kwargs):
         if self.headers["Content-Type"] == MSGPACK_MIME_TYPE:
             return msgpack.unpackb(
                 self.content,
                 timestamp=3,  # Decode msgpack Timestamp as datetime.datetime object.
             )
-        return super().json()
+        return super().json(**kwargs)
 
 
 class UnknownStructureFamily(KeyError):
@@ -367,8 +391,8 @@ def export_util(file, format, get, link, params):
                         },
                     )
                 ).read()
-        with open(file, "wb") as buffer:
-            buffer.write(content)
+                with open(file, "wb") as buffer:
+                    buffer.write(content)
     else:
         # Infer that `file` is a writeable buffer.
         if format is None:
@@ -386,7 +410,7 @@ def export_util(file, format, get, link, params):
                         },
                     )
                 ).read()
-        file.write(content)
+                file.write(content)
 
 
 def client_for_item(
@@ -609,7 +633,7 @@ def is_interactive():
 
     if importlib.util.find_spec("IPython"):
         # IPython is installed
-        from IPython import get_ipython
+        from IPython.core.getipython import get_ipython
 
         if get_ipython():
             return True  # This Python process is an IPython process
@@ -623,7 +647,7 @@ def is_jupyter():
 
     if importlib.util.find_spec("IPython"):
         # IPython is installed
-        from IPython import get_ipython
+        from IPython.core.getipython import get_ipython
 
         if ip := get_ipython():
             if "ZMQInteractiveShell" in type(ip).__name__:
@@ -645,7 +669,7 @@ class ProgressState:
         self._progress = progress
         self._task_id = task_id
         self._spinner = spinner
-        self._live = None
+        self._live: Live | None = None
         self._retrying = False
 
     def advance(self):
@@ -688,7 +712,8 @@ class StandaloneRetryIndicator:
 
     def __init__(self):
         self._showing = False
-        self._live = None
+        self._live: Live | None = None  # terminal spinner
+        self._label: Label | None = None  # Jupyter widget
 
     @staticmethod
     def _stderr_is_tty():
@@ -708,8 +733,8 @@ class StandaloneRetryIndicator:
                 import ipywidgets as widgets
                 from IPython.display import display
 
-                self._live = widgets.Label(value="⟳ Retrying…")
-                display(self._live)
+                self._label = widgets.Label(value="⟳ Retrying…")
+                display(self._label)
             except ImportError:
                 sys.stderr.write("Retrying…\n")
                 sys.stderr.flush()
@@ -736,11 +761,11 @@ class StandaloneRetryIndicator:
             return
         self._showing = False
         if self._live is not None:
-            if is_jupyter():
-                try:
-                    self._live.close()
-                except Exception:
-                    pass
-            else:
-                self._live.stop()
+            self._live.stop()
             self._live = None
+        if self._label is not None:
+            try:
+                self._label.close()
+            except Exception:
+                pass
+            self._label = None

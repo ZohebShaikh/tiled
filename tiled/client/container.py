@@ -8,10 +8,14 @@ import logging
 import time
 import uuid
 import warnings
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Self,
+)
 from urllib.parse import parse_qs, urlparse
 
 import entrypoints
@@ -24,6 +28,7 @@ from ..queries import KeyLookup
 from ..query_registration import default_query_registry
 from ..structures.core import Spec, StructureFamily
 from ..structures.data_source import DataSource
+from ..structures.root import Structure
 from ..utils import (
     UNCHANGED,
     IndexersMixin,
@@ -42,6 +47,7 @@ from .utils import (
     export_util,
     handle_error,
     normalize_specs,
+    retry_call,
     retry_context,
 )
 
@@ -169,9 +175,9 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
     def new_variation(
         self,
         *,
-        structure_clients=UNCHANGED,
-        queries=UNCHANGED,
-        sorting=UNCHANGED,
+        structure_clients: Mapping[str, Any] | str | Sentinel = UNCHANGED,
+        queries: list[Any] | Sentinel = UNCHANGED,
+        sorting: Sequence[tuple[str, int]] | Sentinel = UNCHANGED,
         **kwargs,
     ):
         """
@@ -181,11 +187,11 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
         """
         if isinstance(structure_clients, str):
             structure_clients = DEFAULT_STRUCTURE_CLIENT_DISPATCH[structure_clients]
-        if structure_clients is UNCHANGED:
+        if isinstance(structure_clients, Sentinel):
             structure_clients = self.structure_clients
-        if queries is UNCHANGED:
+        if isinstance(queries, Sentinel):
             queries = self._queries
-        if sorting is UNCHANGED:
+        if isinstance(sorting, Sentinel):
             sorting = self._sorting
         return super().new_variation(
             structure_clients=structure_clients,
@@ -208,20 +214,20 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
                 # Used the cached value and do not make any request.
                 return length
         link = self.item["links"]["search"]
-        for attempt in retry_context():
-            with attempt:
-                content = handle_error(
-                    self.context.http_client.get(
-                        link,
-                        headers={"Accept": MSGPACK_MIME_TYPE},
-                        params={
-                            **parse_qs(urlparse(link).query),
-                            "fields": "count",
-                            **self._queries_as_params,
-                            **self._sorting_params,
-                        },
-                    )
-                ).json()
+        content = retry_call(
+            lambda: handle_error(
+                self.context.http_client.get(
+                    link,
+                    headers={"Accept": MSGPACK_MIME_TYPE},
+                    params={
+                        **parse_qs(urlparse(link).query),
+                        "fields": "count",
+                        **self._queries_as_params,
+                        **self._sorting_params,
+                    },
+                )
+            ).json(),
+        )
         length = content["meta"]["count"]
         self._cached_len = (length, now + LENGTH_CACHE_TTL)
         return length
@@ -245,20 +251,20 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
             return (yield from contents)
         next_page_url = self.item["links"]["search"]
         while next_page_url is not None:
-            for attempt in retry_context():
-                with attempt:
-                    content = handle_error(
-                        self.context.http_client.get(
-                            next_page_url,
-                            headers={"Accept": MSGPACK_MIME_TYPE},
-                            params={
-                                **parse_qs(urlparse(next_page_url).query),
-                                "fields": "",
-                                **self._queries_as_params,
-                                **self._sorting_params,
-                            },
-                        )
-                    ).json()
+            content = retry_call(
+                lambda: handle_error(
+                    self.context.http_client.get(
+                        next_page_url,
+                        headers={"Accept": MSGPACK_MIME_TYPE},
+                        params={
+                            **parse_qs(urlparse(next_page_url).query),
+                            "fields": "",
+                            **self._queries_as_params,
+                            **self._sorting_params,
+                        },
+                    )
+                ).json(),
+            )
             self._cached_len = (
                 content["meta"]["count"],
                 time.monotonic() + LENGTH_CACHE_TTL,
@@ -302,15 +308,15 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
             if self._include_data_sources:
                 params["include_data_sources"] = True
             link = self.item["links"]["search"]
-            for attempt in retry_context():
-                with attempt:
-                    content = handle_error(
-                        self.context.http_client.get(
-                            link,
-                            headers={"Accept": MSGPACK_MIME_TYPE},
-                            params={**parse_qs(urlparse(link).query), **params},
-                        )
-                    ).json()
+            content = retry_call(
+                lambda: handle_error(
+                    self.context.http_client.get(
+                        link,
+                        headers={"Accept": MSGPACK_MIME_TYPE},
+                        params={**parse_qs(urlparse(link).query), **params},
+                    )
+                ).json(),
+            )
             self._cached_len = (
                 content["meta"]["count"],
                 time.monotonic() + LENGTH_CACHE_TTL,
@@ -366,18 +372,18 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
                         if self._include_data_sources:
                             params["include_data_sources"] = True
                         link = self_link + "".join(f"/{key}" for key in keys[i:])
-                        for attempt in retry_context():
-                            with attempt:
-                                content = handle_error(
-                                    self.context.http_client.get(
-                                        link,
-                                        headers={"Accept": MSGPACK_MIME_TYPE},
-                                        params={
-                                            **parse_qs(urlparse(link).query),
-                                            **params,
-                                        },
-                                    )
-                                ).json()
+                        content = retry_call(
+                            lambda: handle_error(
+                                self.context.http_client.get(
+                                    link,
+                                    headers={"Accept": MSGPACK_MIME_TYPE},
+                                    params={
+                                        **parse_qs(urlparse(link).query),
+                                        **params,
+                                    },
+                                )
+                            ).json(),
+                        )
                     except ClientError as err:
                         if err.response.status_code == httpx.codes.NOT_FOUND:
                             # If this is a scalar lookup, raise KeyError("X") not KeyError(("X",)).
@@ -388,6 +394,9 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
                         raise
                     item = content["data"]
                     break
+            else:
+                # Every iteration returns or breaks, and keys is never empty.
+                raise AssertionError("unreachable")
 
             result = client_for_item(
                 self.context,
@@ -402,7 +411,7 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
         keys: str | Iterable[str] | None = None,
         recursive: bool = False,
         external_only: bool = True,
-    ) -> "Container":
+    ) -> Self:
         """Delete the contents of this Container.
 
         Parameters
@@ -466,20 +475,20 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
             next_page_url += f"&page[limit]={page_size}"
         item_counter = itertools.count(start)
         while next_page_url is not None:
-            for attempt in retry_context():
-                with attempt:
-                    content = handle_error(
-                        self.context.http_client.get(
-                            next_page_url,
-                            headers={"Accept": MSGPACK_MIME_TYPE},
-                            params={
-                                **parse_qs(urlparse(next_page_url).query),
-                                "fields": "",
-                                **self._queries_as_params,
-                                **sorting_params,
-                            },
-                        )
-                    ).json()
+            content = retry_call(
+                lambda: handle_error(
+                    self.context.http_client.get(
+                        next_page_url,
+                        headers={"Accept": MSGPACK_MIME_TYPE},
+                        params={
+                            **parse_qs(urlparse(next_page_url).query),
+                            "fields": "",
+                            **self._queries_as_params,
+                            **sorting_params,
+                        },
+                    )
+                ).json(),
+            )
             self._cached_len = (
                 content["meta"]["count"],
                 time.monotonic() + LENGTH_CACHE_TTL,
@@ -535,15 +544,15 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
             }
             if self._include_data_sources:
                 params["include_data_sources"] = True
-            for attempt in retry_context():
-                with attempt:
-                    content = handle_error(
-                        self.context.http_client.get(
-                            next_page_url,
-                            headers={"Accept": MSGPACK_MIME_TYPE},
-                            params=params,
-                        )
-                    ).json()
+            content = retry_call(
+                lambda: handle_error(
+                    self.context.http_client.get(
+                        next_page_url,
+                        headers={"Accept": MSGPACK_MIME_TYPE},
+                        params=params,
+                    )
+                ).json(),
+            )
             self._cached_len = (
                 content["meta"]["count"],
                 time.monotonic() + LENGTH_CACHE_TTL,
@@ -564,13 +573,13 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
             next_page_url = content["links"]["next"]
 
     def keys(self):
-        return KeysView(lambda: len(self), self._keys_slice)
+        return KeysView(self, self._keys_slice)
 
     def values(self):
-        return ValuesView(lambda: len(self), self._items_slice)
+        return ValuesView(self, self._items_slice)
 
     def items(self):
-        return ItemsView(lambda: len(self), self._items_slice)
+        return ItemsView(self, self._items_slice)
 
     def search(self, query):
         """
@@ -650,22 +659,22 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
         """
 
         link = self.item["links"]["self"].replace("/metadata", "/distinct", 1)
-        for attempt in retry_context():
-            with attempt:
-                distinct = handle_error(
-                    self.context.http_client.get(
-                        link,
-                        headers={"Accept": MSGPACK_MIME_TYPE},
-                        params={
-                            **parse_qs(urlparse(link).query),
-                            "metadata": metadata_keys,
-                            "structure_families": structure_families,
-                            "specs": specs,
-                            "counts": counts,
-                            **self._queries_as_params,
-                        },
-                    )
-                ).json()
+        distinct = retry_call(
+            lambda: handle_error(
+                self.context.http_client.get(
+                    link,
+                    headers={"Accept": MSGPACK_MIME_TYPE},
+                    params={
+                        **parse_qs(urlparse(link).query),
+                        "metadata": metadata_keys,
+                        "structure_families": structure_families,
+                        "specs": specs,
+                        "counts": counts,
+                        **self._queries_as_params,
+                    },
+                )
+            ).json(),
+        )
         return distinct
 
     def sort(self, *sorting):
@@ -836,6 +845,10 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
                         if existing is not None:
                             return existing
                     raise
+                break
+        else:
+            # stamina re-raises the last error once attempts are exhausted.
+            raise AssertionError("unreachable")
 
         if structure_family == StructureFamily.container:
             structure = {"contents": None, "count": None}
@@ -858,9 +871,9 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
 
         # Ditto for structure
         if "structure" in document:
-            item["attributes"]["structure"] = STRUCTURE_TYPES[structure_family](
-                document.pop("structure")
-            )
+            item["attributes"]["structure"] = STRUCTURE_TYPES[
+                structure_family
+            ].from_json(document.pop("structure"))
 
         # And for data sources
         if "data_sources" in document:
@@ -1039,9 +1052,10 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
         # Determine chunks such that each chunk is not too large to upload.
         # Any existing chunking will be taken into account.
         # If the array is small, there will be only one chunk.
-        if hasattr(array, "chunks"):
+        existing_chunks = getattr(array, "chunks", None)
+        if existing_chunks is not None:
             chunks = normalize_chunks(
-                array.chunks,
+                existing_chunks,
                 limit=self._SUGGESTED_MAX_UPLOAD_SIZE,
                 dtype=array.dtype,
                 shape=array.shape,
@@ -1215,7 +1229,9 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
         if not client.chunked:
             client.write(array)
         else:
-            divisions = numpy.cumsum((0, *structure.chunks[0]))
+            row_chunks = structure.chunks[0]
+            assert row_chunks is not None  # RaggedStructure validates this.
+            divisions = numpy.cumsum((0, *row_chunks))
             starts, stops = divisions[:-1], divisions[1:]
             for block_id, (start, stop) in enumerate(zip(starts, stops, strict=True)):
                 client.write_block(array[start:stop], block=block_id)
@@ -1483,7 +1499,7 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
         self,
         *uris: str | Path,
         key: str | None = None,
-        structure: Any | None = None,
+        structure: Structure | Mapping[str, Any] | None = None,
         mimetype: str | None = None,
         parameters: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
@@ -1541,15 +1557,16 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
         """
         from ..mimetypes import DEFAULT_REGISTRATION_ADAPTERS_BY_MIMETYPE
         from ..storage import stat_uri
+        from ..structures.array import ArrayStructure
         from ..structures.data_source import Asset, Management
         from .register import resolve_mimetype_for_uris
 
         if not uris:
             raise ValueError("Provide at least one URI or file path to register.")
-        uris = [ensure_uri(uri) for uri in uris]
+        data_uris = [ensure_uri(uri) for uri in uris]
 
         # Resolve the mimetype (extension-based) unless explicitly provided.
-        mimetype = mimetype or resolve_mimetype_for_uris(uris)
+        mimetype = mimetype or resolve_mimetype_for_uris(data_uris)
 
         try:
             adapter_class = DEFAULT_REGISTRATION_ADAPTERS_BY_MIMETYPE[mimetype]
@@ -1558,17 +1575,19 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
 
         # Open the file(s) client-side to infer structure, metadata, and specs.
         parameters = parameters or {}
-        adapter = adapter_class.from_uris(*uris, **parameters)
+        adapter = adapter_class.from_uris(*data_uris, **parameters)
 
         # Optionally override the inferred structure (e.g. to reshape on read),
         # first checking that the provided structure can actually serve the data.
         properties = {}
-        if structure is not None:
-            if isinstance(structure, dict):
+        inferred: Structure = adapter.structure()
+        if structure is None:
+            structure = inferred
+        else:
+            if isinstance(structure, Mapping):
                 structure = STRUCTURE_TYPES[adapter.structure_family].from_json(
                     structure
                 )
-            inferred = adapter.structure()
             if not structure.is_compatible(inferred):
                 raise ValueError(
                     "The provided structure is not compatible with the structure "
@@ -1578,19 +1597,18 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
             # When an array is reshaped/rechunked on read, record the original
             # on-disk chunking so the server can read the file(s) correctly.
             if (
-                adapter.structure_family == StructureFamily.array
+                isinstance(structure, ArrayStructure)
+                and isinstance(inferred, ArrayStructure)
                 and structure.chunks != inferred.chunks
             ):
                 properties = {"chunks": inferred.chunks}
-        else:
-            structure = adapter.structure()
 
         # Build the single DataSource describing this dataset from a list of Assets.
-        if len(uris) > 1:
+        if len(data_uris) > 1:
             # Multiple files form one stacked dataset: one Asset per file, all
             # bound to the plural 'data_uris' parameter and ordered by 'num'.
             assets = []
-            for i, uri in enumerate(uris):
+            for i, uri in enumerate(data_uris):
                 is_directory, size = stat_uri(uri)
                 assets.append(
                     Asset(
@@ -1602,14 +1620,14 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
                     )
                 )
         else:
-            is_directory, size = stat_uri(uris[0])
+            is_directory, size = stat_uri(data_uris[0])
             if hasattr(adapter, "generate_data_sources"):
                 # Let the adapter describe its own DataSource (e.g. CSV, Arrow). Only keep
                 # assets, because we may need to overwrite the structure.
                 # TODO: Drop `generate_data_sources` and unify asset parameterization (`data_uri` vs `data_uris`)
                 data_sources = adapter.generate_data_sources(
                     mimetype,
-                    uris[0],
+                    data_uris[0],
                     is_directory=is_directory,
                     size=size,
                     parameters=parameters,
@@ -1618,7 +1636,7 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
             else:
                 assets = [
                     Asset(
-                        data_uri=uris[0],
+                        data_uri=data_uris[0],
                         is_directory=is_directory,
                         size=size,
                         parameter="data_uri",
@@ -1680,7 +1698,7 @@ class DeepSearchResults(collections.abc.Mapping):
         return f"<{type(self).__name__} ({len(self)} results)>"
 
     def _params(self, extra=None):
-        params = {**self._queries_as_params}
+        params: dict[str, Any] = {**self._queries_as_params}
         if self._max_depth is not None:
             params["max_depth"] = self._max_depth
         if self._include_data_sources:
@@ -1695,15 +1713,15 @@ class DeepSearchResults(collections.abc.Mapping):
             length, deadline = self._cached_len
             if now < deadline:
                 return length
-        for attempt in retry_context():
-            with attempt:
-                content = handle_error(
-                    self.context.http_client.get(
-                        self._link,
-                        headers={"Accept": MSGPACK_MIME_TYPE},
-                        params=self._params({"fields": "count"}),
-                    )
-                ).json()
+        content = retry_call(
+            lambda: handle_error(
+                self.context.http_client.get(
+                    self._link,
+                    headers={"Accept": MSGPACK_MIME_TYPE},
+                    params=self._params({"fields": "count"}),
+                )
+            ).json(),
+        )
         length = content["meta"]["count"]
         self._cached_len = (length, now + LENGTH_CACHE_TTL)
         return length
@@ -1724,18 +1742,18 @@ class DeepSearchResults(collections.abc.Mapping):
             next_page_url += f"&page[limit]={page_size}"
         item_counter = itertools.count(start)
         while next_page_url is not None:
-            for attempt in retry_context():
-                with attempt:
-                    content = handle_error(
-                        self.context.http_client.get(
-                            next_page_url,
-                            headers={"Accept": MSGPACK_MIME_TYPE},
-                            params={
-                                **parse_qs(urlparse(next_page_url).query),
-                                **self._params(),
-                            },
-                        )
-                    ).json()
+            content = retry_call(
+                lambda: handle_error(
+                    self.context.http_client.get(
+                        next_page_url,
+                        headers={"Accept": MSGPACK_MIME_TYPE},
+                        params={
+                            **parse_qs(urlparse(next_page_url).query),
+                            **self._params(),
+                        },
+                    )
+                ).json(),
+            )
             self._cached_len = (
                 content["meta"]["count"],
                 time.monotonic() + LENGTH_CACHE_TTL,
@@ -1759,13 +1777,13 @@ class DeepSearchResults(collections.abc.Mapping):
             next_page_url = content["links"]["next"]
 
     def keys(self):
-        return KeysView(lambda: len(self), self._keys_slice)
+        return KeysView(self, self._keys_slice)
 
     def values(self):
-        return ValuesView(lambda: len(self), self._items_slice)
+        return ValuesView(self, self._items_slice)
 
     def items(self):
-        return ItemsView(lambda: len(self), self._items_slice)
+        return ItemsView(self, self._items_slice)
 
     def __iter__(self):
         yield from self._keys_slice(0, None, 1)

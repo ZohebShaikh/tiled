@@ -321,7 +321,7 @@ WHERE cache_key = ?""",
         request: httpx.Request,
         response: httpx.Response,
         content: bytes | None = None,
-    ) -> None:
+    ) -> bool:
         """Set new response entry in cache.
 
         In case the response does not yet have a '_content' property, content should

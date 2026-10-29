@@ -6,11 +6,14 @@ from urllib.parse import parse_qs, urlparse
 
 import dask
 import dask.array
+import dask.array.core
 import httpx2 as httpx
 import numpy
+from dask.delayed import delayed
 from numpy.typing import NDArray
 
 from ..ndslice import NDBlock, NDSlice, split_slice
+from ..structures.array import ArrayStructure
 from ..structures.core import STRUCTURE_TYPES
 from ..utils import Conflicts
 from .base import BaseClient
@@ -19,6 +22,7 @@ from .utils import (
     export_util,
     handle_error,
     params_from_slice,
+    retry_call,
     retry_context,
     slices_to_dask_chunks,
 )
@@ -35,6 +39,11 @@ class _DaskArrayClient(BaseClient):
     # data in blocks. If set to None, the client will not attempt to combine
     # requests and will fetch each chunk separately as determiied by the structure.
     RESPONSE_BYTESIZE_LIMIT = 100 * 1024 * 1024  # 100 MiB
+
+    def structure(self) -> ArrayStructure:
+        structure = super().structure()
+        assert isinstance(structure, ArrayStructure)
+        return structure
 
     def __init__(self, *args, item, **kwargs):
         super().__init__(*args, item=item, **kwargs)
@@ -84,7 +93,7 @@ class _DaskArrayClient(BaseClient):
         )
 
     def __array__(self, *args, **kwargs):
-        return self.read().__array__(*args, **kwargs)
+        return numpy.asarray(self.read(), *args, **kwargs)
 
     def _get_block(self, block: NDBlock, block_slice: NDSlice | None = None):
         """Fetch the data for one chunk (block) in a chunked array.
@@ -132,15 +141,16 @@ class _DaskArrayClient(BaseClient):
         }
         params = params | ({"slice": block_slice.to_numpy_str()} if block_slice else {})
         with self.context.throttle():
-            for attempt in retry_context(self.context):
-                with attempt:
-                    content = handle_error(
-                        self.context.http_client.get(
-                            url_path,
-                            headers={"Accept": media_type},
-                            params=params,
-                        )
-                    ).read()
+            content = retry_call(
+                lambda: handle_error(
+                    self.context.http_client.get(
+                        url_path,
+                        headers={"Accept": media_type},
+                        params=params,
+                    )
+                ).read(),
+                self.context,
+            )
         if (ps := self.context.progress_state) is not None:
             ps.advance()
         return numpy.frombuffer(content, dtype=self.dtype).reshape(exp_shape)
@@ -180,15 +190,16 @@ class _DaskArrayClient(BaseClient):
         }
         params = params | ({"slice": slice.to_numpy_str()} if slice else {})
         with self.context.throttle():
-            for attempt in retry_context(self.context):
-                with attempt:
-                    content = handle_error(
-                        self.context.http_client.get(
-                            url_path,
-                            headers={"Accept": media_type},
-                            params=params,
-                        )
-                    ).read()
+            content = retry_call(
+                lambda: handle_error(
+                    self.context.http_client.get(
+                        url_path,
+                        headers={"Accept": media_type},
+                        params=params,
+                    )
+                ).read(),
+                self.context,
+            )
         if (ps := self.context.progress_state) is not None:
             ps.advance()
         return numpy.frombuffer(content, dtype=self.dtype).reshape(exp_shape)
@@ -212,7 +223,7 @@ class _DaskArrayClient(BaseClient):
 
         exp_shape = block_slice.shape_after_slice(shape) if block_slice else shape
         dask_array = dask.array.from_delayed(
-            dask.delayed(self._get_block)(block, block_slice),
+            delayed(self._get_block)(block, block_slice),
             dtype=self.dtype,
             shape=exp_shape,
         )
@@ -264,7 +275,7 @@ class _DaskArrayClient(BaseClient):
         # If the expected response is small, fetch it in one go.
         if total_bytes < self.RESPONSE_BYTESIZE_LIMIT:
             dask_array = dask.array.from_delayed(
-                dask.delayed(self._get_slice)(arr_slice),
+                delayed(self._get_slice)(arr_slice),
                 dtype=self.dtype,
                 shape=exp_shape,
             )
@@ -288,7 +299,7 @@ class _DaskArrayClient(BaseClient):
             (name,) + indx: (self._get_slice, slc)
             for indx, (slc) in indexed_slices.items()
         }
-        dask_array = dask.array.Array(
+        dask_array = dask.array.core.Array(
             name=name,
             dask=dask_tasks,
             dtype=self.dtype,
@@ -418,30 +429,32 @@ class _DaskArrayClient(BaseClient):
         if persist is False:
             # Extend the query only for non-default behavior.
             params["persist"] = persist
-        for attempt in retry_context():
-            with attempt:
-                response = self.context.http_client.patch(
-                    url_path,
-                    content=array_.tobytes(),
-                    headers={"Content-Type": "application/octet-stream"},
-                    params=params,
-                )
-                if response.status_code in [
-                    httpx.codes.BAD_REQUEST,
-                    httpx.codes.CONFLICT,
-                ]:
-                    detail = (
-                        response.json()
-                        .get("detail", "Array parameters conflict.")
-                        .replace(
-                            "Use ?",  # URL query param
-                            "Pass keyword argument ",  # Python function argument
-                        )
+
+        def patch():
+            response = self.context.http_client.patch(
+                url_path,
+                content=array_.tobytes(),
+                headers={"Content-Type": "application/octet-stream"},
+                params=params,
+            )
+            if response.status_code in [
+                httpx.codes.BAD_REQUEST,
+                httpx.codes.CONFLICT,
+            ]:
+                detail = (
+                    response.json()
+                    .get("detail", "Array parameters conflict.")
+                    .replace(
+                        "Use ?",  # URL query param
+                        "Pass keyword argument ",  # Python function argument
                     )
-                    if response.status_code == httpx.codes.CONFLICT:
-                        raise Conflicts(detail)
-                    raise ValueError(detail)
-                handle_error(response)
+                )
+                if response.status_code == httpx.codes.CONFLICT:
+                    raise Conflicts(detail)
+                raise ValueError(detail)
+            return handle_error(response)
+
+        response = retry_call(patch)
         # Update cached structure.
         new_structure = response.json()
         structure_type = STRUCTURE_TYPES[self.structure_family]

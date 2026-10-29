@@ -1,9 +1,10 @@
 import collections.abc
 import time
-from collections.abc import MutableMapping
+from collections.abc import Mapping, MutableMapping
 from copy import copy, deepcopy
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import json_merge_patch
@@ -15,9 +16,23 @@ from tiled.client.context import Context
 
 from ..structures.core import STRUCTURE_TYPES, Spec, StructureFamily
 from ..structures.data_source import DataSource
-from ..utils import UNCHANGED, DictView, ListView, patch_mimetypes, safe_json_dump
+from ..structures.root import Structure
+from ..utils import (
+    UNCHANGED,
+    DictView,
+    ListView,
+    Sentinel,
+    patch_mimetypes,
+    safe_json_dump,
+)
 from .metadata_update import apply_update_patch
-from .utils import MSGPACK_MIME_TYPE, handle_error, normalize_specs, retry_context
+from .utils import (
+    MSGPACK_MIME_TYPE,
+    handle_error,
+    normalize_specs,
+    retry_call,
+    retry_context,
+)
 
 # TODO: Duplicated from  tiled.type_aliases to prevent importing numpy
 # After #1407 replace AnyAdapter with the BaseClass and remove this redefinition
@@ -40,19 +55,19 @@ class MetadataRevisions:
                 # Used the cached value and do not make any request.
                 return length
 
-        for attempt in retry_context():
-            with attempt:
-                content = handle_error(
-                    self.context.http_client.get(
-                        self._link,
-                        headers={"Accept": MSGPACK_MIME_TYPE},
-                        params={
-                            **parse_qs(urlparse(self._link).query),
-                            "page[offset]": 0,
-                            "page[limit]": 0,
-                        },
-                    )
-                ).json()
+        content = retry_call(
+            lambda: handle_error(
+                self.context.http_client.get(
+                    self._link,
+                    headers={"Accept": MSGPACK_MIME_TYPE},
+                    params={
+                        **parse_qs(urlparse(self._link).query),
+                        "page[offset]": 0,
+                        "page[limit]": 0,
+                    },
+                )
+            ).json(),
+        )
         length = content["meta"]["count"]
         self._cached_len = (length, now + LENGTH_CACHE_TTL)
         return length
@@ -64,19 +79,19 @@ class MetadataRevisions:
             offset = item_
             limit = 1
 
-            for attempt in retry_context():
-                with attempt:
-                    content = handle_error(
-                        self.context.http_client.get(
-                            self._link,
-                            headers={"Accept": MSGPACK_MIME_TYPE},
-                            params={
-                                **parse_qs(urlparse(self._link).query),
-                                "page[offset]": offset,
-                                "page[limit]": limit,
-                            },
-                        )
-                    ).json()
+            content = retry_call(
+                lambda: handle_error(
+                    self.context.http_client.get(
+                        self._link,
+                        headers={"Accept": MSGPACK_MIME_TYPE},
+                        params={
+                            **parse_qs(urlparse(self._link).query),
+                            "page[offset]": offset,
+                            "page[limit]": limit,
+                        },
+                    )
+                ).json(),
+            )
             (result,) = content["data"]
             return result
 
@@ -93,20 +108,17 @@ class MetadataRevisions:
             next_page_url = self._link + params
             result = []
             while next_page_url is not None:
-                for attempt in retry_context():
-                    with attempt:
-                        content = handle_error(
-                            self.context.http_client.get(
-                                next_page_url, headers={"Accept": MSGPACK_MIME_TYPE}
-                            )
-                        ).json()
-                if len(result) == 0:
-                    result = content.copy()
-                else:
-                    result["data"].extend(content["data"])
+                content = retry_call(
+                    lambda: handle_error(
+                        self.context.http_client.get(
+                            next_page_url, headers={"Accept": MSGPACK_MIME_TYPE}
+                        )
+                    ).json(),
+                )
+                result.extend(content["data"])
                 next_page_url = content["links"]["next"]
 
-            return result["data"]
+            return result
 
     def delete_revision(self, n):
         for attempt in retry_context():
@@ -138,7 +150,7 @@ class BaseClient:
         self._context = context
         self._item = item
         self._cached_len = None  # a cache just for __len__
-        self.structure_clients = structure_clients
+        self.structure_clients: Mapping[str, Any] = structure_clients
         self._metadata_revisions = None
         self._include_data_sources = include_data_sources
         attributes = self.item["attributes"]
@@ -156,7 +168,7 @@ class BaseClient:
 
         super().__init__()
 
-    def structure(self):
+    def structure(self) -> Structure | None:
         """
         Return a dataclass describing the structure of the data.
         """
@@ -213,20 +225,20 @@ class BaseClient:
         return self._context
 
     def refresh(self):
-        params = {
+        params: dict[str, Any] = {
             **parse_qs(urlparse(self.uri).query),
         }
         if self._include_data_sources:
             params["include_data_sources"] = self._include_data_sources
-        for attempt in retry_context():
-            with attempt:
-                content = handle_error(
-                    self.context.http_client.get(
-                        self.uri,
-                        headers={"Accept": MSGPACK_MIME_TYPE},
-                        params=params,
-                    )
-                ).json()
+        content = retry_call(
+            lambda: handle_error(
+                self.context.http_client.get(
+                    self.uri,
+                    headers={"Accept": MSGPACK_MIME_TYPE},
+                    params=params,
+                )
+            ).json(),
+        )
         self._item = content["data"]
         if self.structure_family != StructureFamily.container:
             structure_type = STRUCTURE_TYPES[self.structure_family]
@@ -326,19 +338,20 @@ class BaseClient:
 
     def new_variation(
         self,
-        structure_clients=UNCHANGED,
-        include_data_sources=UNCHANGED,
-        structure=UNCHANGED,
+        *,
+        structure_clients: Mapping[str, Any] | Sentinel = UNCHANGED,
+        include_data_sources: bool | Sentinel = UNCHANGED,
+        structure: Structure | None | Sentinel = UNCHANGED,
         **kwargs,
     ):
         """
         This is intended primarily for internal use and use by subclasses.
         """
-        if structure_clients is UNCHANGED:
+        if isinstance(structure_clients, Sentinel):
             structure_clients = self.structure_clients
-        if include_data_sources is UNCHANGED:
+        if isinstance(include_data_sources, Sentinel):
             include_data_sources = self._include_data_sources
-        if structure is UNCHANGED:
+        if isinstance(structure, Sentinel):
             structure = self._structure
         return type(self)(
             self.context,
@@ -371,17 +384,17 @@ class BaseClient:
             )
             for asset in data_source.assets:
                 if asset.is_directory:
-                    for attempt in retry_context():
-                        with attempt:
-                            manifest = handle_error(
-                                self.context.http_client.get(
-                                    manifest_link,
-                                    params={
-                                        **parse_qs(urlparse(manifest_link).query),
-                                        "id": asset.id,
-                                    },
-                                )
-                            ).json()["manifest"]
+                    manifest = retry_call(
+                        lambda: handle_error(
+                            self.context.http_client.get(
+                                manifest_link,
+                                params={
+                                    **parse_qs(urlparse(manifest_link).query),
+                                    "id": asset.id,
+                                },
+                            )
+                        ).json()["manifest"],
+                    )
                 else:
                     manifest = None
                 manifests[asset.id] = manifest
@@ -438,9 +451,11 @@ class BaseClient:
                 f"raw_export() got unexpected keyword arguments: {sorted(kwargs)!r}"
             )
 
-        in_memory = isinstance(destination, MutableMapping)
-        if not in_memory:
-            destination = Path(destination or Path.cwd())
+        if isinstance(destination, MutableMapping):
+            mapping, directory = destination, None
+        else:
+            mapping, directory = None, Path(destination or Path.cwd())
+        in_memory = mapping is not None
 
         # Import here to defer the import of rich (for progress bar).
         from .download import (
@@ -452,7 +467,7 @@ class BaseClient:
         urls = []
         targets = []  # Paths or posix-style string keys.
         sizes = []  # Known content lengths (parallel to urls); None if unknown.
-        data_sources = self.include_data_sources().data_sources()
+        data_sources = self.include_data_sources().data_sources() or []
         asset_manifest = self.asset_manifest(data_sources)
         if len(data_sources) != 1:
             raise NotImplementedError(
@@ -465,11 +480,13 @@ class BaseClient:
             for asset in data_source.assets:
                 if len(data_source.assets) == 1:
                     # Only one asset: keep the name simple.
-                    base = "" if in_memory else destination
+                    base = "" if directory is None else directory
                 else:
                     # Multiple assets: namespace each asset by id.
                     base = (
-                        f"{asset.id}" if in_memory else Path(destination, str(asset.id))
+                        f"{asset.id}"
+                        if directory is None
+                        else Path(directory, str(asset.id))
                     )
                 if asset.is_directory:
                     relative_paths = asset_manifest[asset.id]
@@ -519,7 +536,7 @@ class BaseClient:
                 self.context.http_client,
                 urls,
                 targets,
-                mapping=destination,
+                mapping=mapping,
                 max_workers=max_workers,
                 totals=sizes,
                 accept_encoding=accept_encoding,
@@ -798,10 +815,7 @@ class BaseClient:
             )
 
         assert content_type in patch_mimetypes
-        if specs_patch is None:
-            normalized_specs_patch = None
-        else:
-            normalized_specs_patch = []
+        normalized_specs_patch = []
 
         if content_type == patch_mimetypes.JSON_PATCH:
             if specs_patch:
@@ -820,23 +834,23 @@ class BaseClient:
         data = {
             "content-type": content_type,
             "metadata": metadata_patch,
-            "specs": normalized_specs_patch,
+            "specs": None if specs_patch is None else normalized_specs_patch,
             "access_tags": access_tags_patch,
         }
         params = {}
         if drop_revision:
             params["drop_revision"] = True
 
-        for attempt in retry_context():
-            with attempt:
-                content = handle_error(
-                    self.context.http_client.patch(
-                        self.item["links"]["self"],
-                        headers={"Content-Type": "application/json"},
-                        content=safe_json_dump(data),
-                        params=params,
-                    )
-                ).json()
+        content = retry_call(
+            lambda: handle_error(
+                self.context.http_client.patch(
+                    self.item["links"]["self"],
+                    headers={"Content-Type": "application/json"},
+                    content=safe_json_dump(data),
+                    params=params,
+                )
+            ).json(),
+        )
 
         if metadata_patch is not None:
             if "metadata" in content:
@@ -902,16 +916,16 @@ class BaseClient:
         if drop_revision:
             params["drop_revision"] = True
 
-        for attempt in retry_context():
-            with attempt:
-                content = handle_error(
-                    self.context.http_client.put(
-                        self.item["links"]["self"],
-                        headers={"Content-Type": "application/json"},
-                        content=safe_json_dump(data),
-                        params=params,
-                    )
-                ).json()
+        content = retry_call(
+            lambda: handle_error(
+                self.context.http_client.put(
+                    self.item["links"]["self"],
+                    headers={"Content-Type": "application/json"},
+                    content=safe_json_dump(data),
+                    params=params,
+                )
+            ).json(),
+        )
 
         if metadata is not None:
             if "metadata" in content:
