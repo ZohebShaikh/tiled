@@ -41,10 +41,12 @@ def create_api_key(
         # This is how typer interprets unspecified scopes.
         # Replace with None to get default scopes.
         scopes = None
-    if expires_in and expires_in.isdigit():
-        expires_in = int(expires_in)
+    # A bare number is seconds; otherwise a duration string like '7d'.
+    lifetime: int | str | None = (
+        int(expires_in) if expires_in and expires_in.isdigit() else expires_in
+    )
     info = context.create_api_key(
-        scopes=scopes, access_tags=access_tags, expires_in=expires_in, note=note
+        scopes=scopes, access_tags=access_tags, expires_in=lifetime, note=note
     )
     # TODO Print other info to the stderr?
     typer.echo(info["secret"])
@@ -58,6 +60,9 @@ def list_api_keys(
 ):
     context = get_context(profile)
     info = context.whoami()
+    if info is None:
+        typer.echo("The server does not have authentication configured.", err=True)
+        raise typer.Exit(1)
     if not info["api_keys"]:
         typer.echo("No API keys found", err=True)
         return

@@ -78,10 +78,10 @@ def profile_edit(profile_name: str):
     import platform
     import subprocess
 
-    if platform.system() == "Darwin":
-        subprocess.call(("open", filepath))
-    elif platform.system() == "Windows":
+    if sys.platform == "win32":
         os.startfile(filepath)
+    elif platform.system() == "Darwin":
+        subprocess.call(("open", filepath))
     else:
         subprocess.call(("xdg-open", filepath))
 

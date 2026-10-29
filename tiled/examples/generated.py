@@ -2,7 +2,7 @@ import asyncio
 import random
 import string
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import awkward
 import numpy
@@ -35,10 +35,9 @@ data = {
     "short_column_float": rng.random(100),
     "short_column_bool": numpy.array(random.choices([True, False], k=100)),
     "short_column_datetime": numpy.arange(
-        datetime(2025, 1, 1),
-        datetime(2025, 4, 11),
-        timedelta(days=1),
-        dtype="datetime64[D]",
+        numpy.datetime64("2025-01-01"),
+        numpy.datetime64("2025-04-11"),
+        numpy.timedelta64(1, "D"),
     ),
     "short_column_str": numpy.array(
         random.choices([letter * 3 for letter in string.ascii_letters], k=100),

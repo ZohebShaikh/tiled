@@ -179,8 +179,8 @@ def serve_directory(
             raise ValueError(
                 f"Failed parsing --ext option {item}, expected format '.ext=mimetype'"
             )
-        ext, mimetype = match.groups()
-        mimetypes_by_file_ext[ext] = mimetype
+        file_ext, mimetype = match.groups()
+        mimetypes_by_file_ext[file_ext] = mimetype
     adapters_by_mimetype = {}
     ADAPTER_PATTERN = re.compile(r"(.*) *= *(.*)")
     for item in adapters or []:
@@ -231,8 +231,8 @@ def serve_directory(
     from ..client import from_uri as client_from_uri
 
     print_server_info(web_app, host=host, port=port, include_api_key=generated)
-    log_config = _setup_log_config(log_config, log_timestamps)
-    config = uvicorn.Config(web_app, host=host, port=port, log_config=log_config)
+    log_config_dict = _setup_log_config(log_config, log_timestamps)
+    config = uvicorn.Config(web_app, host=host, port=port, log_config=log_config_dict)
     server = uvicorn.Server(config)
 
     async def run_server():
@@ -453,7 +453,7 @@ def serve_catalog(
             )
             writable_dir = directory / DATA_SUBDIRECTORY
             writable_dir.mkdir()
-            write.append(writable_dir)
+            write.append(str(writable_dir))
             typer.echo(
                 f"  writable tabular storage:  {directory / DUCKDB_TABULAR_DATA_FILENAME}",
                 err=True,
@@ -503,6 +503,8 @@ or use an existing one:
             cli_cache_config["data_ttl"] = cache_data_ttl
         if cache_seq_ttl:
             cli_cache_config["seq_ttl"] = cache_seq_ttl
+        from ..config import StreamingCacheConfig
+
         # Apply defaults.
         cache_config = StreamingCacheConfig(**cli_cache_config).model_dump()
     else:
@@ -527,8 +529,8 @@ or use an existing one:
 
     import uvicorn
 
-    log_config = _setup_log_config(log_config, log_timestamps)
-    uvicorn.run(web_app, host=host, port=port, log_config=log_config)
+    log_config_dict = _setup_log_config(log_config, log_timestamps)
+    uvicorn.run(web_app, host=host, port=port, log_config=log_config_dict)
 
 
 serve_app.command("catalog")(serve_catalog)
@@ -597,8 +599,8 @@ def serve_pyobject(
 
     import uvicorn
 
-    log_config = _setup_log_config(log_config, log_timestamps)
-    uvicorn.run(web_app, host=host, port=port, log_config=log_config)
+    log_config_dict = _setup_log_config(log_config, log_timestamps)
+    uvicorn.run(web_app, host=host, port=port, log_config=log_config_dict)
 
 
 @serve_app.command("demo")
@@ -707,9 +709,8 @@ def serve_config(
     uvicorn_kwargs = parsed_config.uvicorn
     # If --host is given, it overrides host in config. Same for --port and --log-config.
     uvicorn_kwargs["host"] = host or uvicorn_kwargs.get("host", "127.0.0.1")
-    if port is None:
-        port = uvicorn_kwargs.get("port", 8000)
-    uvicorn_kwargs["port"] = port
+    resolved_port: int = port if port is not None else uvicorn_kwargs.get("port", 8000)
+    uvicorn_kwargs["port"] = resolved_port
     uvicorn_kwargs["log_config"] = _setup_log_config(
         log_config or uvicorn_kwargs.get("log_config"),
         log_timestamps,
