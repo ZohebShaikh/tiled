@@ -1,15 +1,15 @@
 import collections.abc
 import dataclasses
-import inspect
 import itertools
 import operator
 import re
 import sys
+import types
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from hashlib import md5
-from typing import Any, Literal
+from typing import Any, Literal, Protocol, runtime_checkable
 
 import anyio
 import dateutil.tz
@@ -147,6 +147,36 @@ def pagination_links(base_url, route, path_parts, page, next_cursor, length_hint
     return links
 
 
+@runtime_checkable
+class KeysPaginatedAdapter(Protocol):
+    "A container that pages its keys by cursor or offset."
+
+    async def cursor_for_offset(self, offset: int) -> int | None: ...
+
+    async def keys_page(
+        self, cursor: int | None = None, limit: int | None = None
+    ) -> tuple[list[str], int | None]: ...
+
+    async def keys_range(
+        self, offset: int = 0, limit: int | None = None
+    ) -> list[str]: ...
+
+
+@runtime_checkable
+class ItemsPaginatedAdapter(Protocol):
+    "A container that pages its items by cursor or offset."
+
+    async def cursor_for_offset(self, offset: int) -> int | None: ...
+
+    async def items_page(
+        self, cursor: int | None = None, limit: int | None = None
+    ) -> tuple[list[tuple[str, Any]], int | None]: ...
+
+    async def items_range(
+        self, offset: int = 0, limit: int | None = None
+    ) -> list[tuple[str, Any]]: ...
+
+
 async def apply_search(tree, filters, query_registry):
     queries = defaultdict(
         dict
@@ -155,7 +185,13 @@ async def apply_search(tree, filters, query_registry):
     for key, value in filters.items():
         if value is None:
             continue
-        name, field = _FILTER_PARAM_PATTERN.match(key).groups()
+        match = _FILTER_PARAM_PATTERN.match(key)
+        if match is None:
+            raise HTTPException(
+                status_code=HTTP_400_BAD_REQUEST,
+                detail=f"Malformed filter parameter {key!r}",
+            )
+        name, field = match.groups()
         queries[name][field] = value
 
     # Apply the queries and obtain a narrowed tree.
@@ -254,7 +290,7 @@ async def construct_entries_response(
     next_cursor = None
     if fields == [schemas.EntryFields.none]:
         # Pull a page of just the keys, which is cheaper.
-        if hasattr(tree, "keys_page"):
+        if isinstance(tree, KeysPaginatedAdapter):
             if page.cursor is not None:
                 keys, next_cursor = await tree.keys_page(page.cursor, page.limit)
             else:
@@ -273,7 +309,7 @@ async def construct_entries_response(
         items = []
     else:
         # Pull the entire page of full items into memory.
-        if hasattr(tree, "items_page"):
+        if isinstance(tree, ItemsPaginatedAdapter):
             if page.cursor is not None:
                 items, next_cursor = await tree.items_page(page.cursor, page.limit)
             else:
@@ -318,10 +354,11 @@ async def construct_entries_response(
         # be no 'Expires' header. We will pessimistically assume the values
         # are immediately stale.
         if metadata_stale_at is not None:
-            if getattr(entry, "metadata_stale_at", None) is None:
+            entry_stale_at = getattr(entry, "metadata_stale_at", None)
+            if entry_stale_at is None:
                 metadata_stale_at = None
             else:
-                metadata_stale_at = min(metadata_stale_at, entry.metadata_stale_at)
+                metadata_stale_at = min(metadata_stale_at, entry_stale_at)
 
     return (
         schemas.Response(data=data, links=links, meta={"count": count}),
@@ -466,15 +503,9 @@ async def construct_data_response(
         raise UnsupportedMediaTypes(
             f"This type is supported in general but there was an error packing this specific data: {err.args[0]}",
         )
-    if inspect.isgenerator(content) or inspect.isasyncgen(content):
-        response_class = StreamingResponse
-    else:
-        response_class = Response
-    return response_class(
-        content,
-        media_type=media_type,
-        headers=headers,
-    )
+    if isinstance(content, (types.GeneratorType, types.AsyncGeneratorType)):
+        return StreamingResponse(content, media_type=media_type, headers=headers)
+    return Response(content, media_type=media_type, headers=headers)
 
 
 async def construct_resource(
@@ -698,6 +729,13 @@ def _patch_naive_datetimes(obj):
     return patched_obj
 
 
+def _packb(obj: Any, **kwargs: Any) -> bytes:
+    packed = msgpack.packb(obj, **kwargs)
+    # packb uses an auto-resetting Packer, which always returns the bytes.
+    assert packed is not None
+    return packed
+
+
 class MsgpackResponse(Response):
     media_type = "application/x-msgpack"
 
@@ -708,9 +746,7 @@ class MsgpackResponse(Response):
     def render(self, content: Any, _reentered=False) -> bytes:
         try:
             with record_timing(self.__metrics, "pack"):
-                return msgpack.packb(
-                    content, default=_fallback_msgpack_encoder, datetime=True
-                )
+                return _packb(content, default=_fallback_msgpack_encoder, datetime=True)
         except (ValueError, TypeError) as err:
             # msgpack tries to handle all datetimes, but if it
             # received a naive one (tzinfo=None) then it fails.
@@ -787,8 +823,7 @@ def get_websocket_envelope_formatter(
         ):
             if payload_bytes is not None:
                 metadata["payload"] = payload_bytes
-            data = msgpack.packb(metadata)
-            await websocket.send_bytes(data)
+            await websocket.send_bytes(_packb(metadata))
 
         return stream_msgpack
 

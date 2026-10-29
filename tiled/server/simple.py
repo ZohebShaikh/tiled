@@ -154,7 +154,7 @@ class SimpleTiledServer:
             cache_config=StreamingCacheConfig(uri="memory").model_dump(),
         )
         server_settings = {}
-        if enable_webhooks:
+        if webhook_secret_key is not None:
             webhook_cfg = WebhooksConfig(secret_keys=[webhook_secret_key])
             server_settings["webhooks"] = webhook_cfg
         self.app = build_app(

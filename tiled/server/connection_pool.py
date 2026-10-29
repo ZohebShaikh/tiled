@@ -1,6 +1,7 @@
 import os
 from collections.abc import AsyncGenerator, Callable
-from contextlib import nullcontext
+from contextlib import AbstractAsyncContextManager, nullcontext
+from functools import partial
 
 from fastapi import Depends
 from sqlalchemy import event
@@ -21,16 +22,19 @@ _connection_pools: dict[DatabaseSettings, AsyncEngine] = {}
 
 
 def open_database_connection_pool(database_settings: DatabaseSettings) -> AsyncEngine:
-    if is_memory_sqlite(database_settings.uri):
+    uri = database_settings.uri
+    if uri is None:
+        raise ValueError("A database URI is required to open a connection pool.")
+    if is_memory_sqlite(uri):
         engine = create_async_engine(
-            ensure_specified_sql_driver(database_settings.uri),
+            ensure_specified_sql_driver(uri),
             echo=DEFAULT_ECHO,
             json_serializer=json_serializer,
             poolclass=StaticPool,
         )
     else:
         engine = create_async_engine(
-            ensure_specified_sql_driver(database_settings.uri),
+            ensure_specified_sql_driver(uri),
             echo=DEFAULT_ECHO,
             json_serializer=json_serializer,
             poolclass=AsyncAdaptedQueuePool,
@@ -40,7 +44,7 @@ def open_database_connection_pool(database_settings: DatabaseSettings) -> AsyncE
         )
 
     # Cache the engine so we don't create more than one pool per database_settings.
-    monitor_db_pool(engine.pool, sanitize_uri(database_settings.uri)[0])
+    monitor_db_pool(engine.pool, sanitize_uri(uri)[0])
     _connection_pools[database_settings] = engine
 
     # For SQLite, ensure that foreign key constraints are enforced.
@@ -62,7 +66,7 @@ async def close_database_connection_pool(database_settings: DatabaseSettings):
 
 def get_database_engine(
     settings: Settings | DatabaseSettings = Depends(get_settings),
-) -> AsyncEngine:
+) -> AsyncEngine | None:
     database_settings = (
         settings.database_settings if isinstance(settings, Settings) else settings
     )
@@ -76,18 +80,28 @@ def get_database_engine(
 
 
 async def get_database_session_factory(
-    engine: AsyncEngine = Depends(get_database_engine),
-) -> AsyncGenerator[Callable[[], AsyncSession | None]]:
+    engine: AsyncEngine | None = Depends(get_database_engine),
+) -> AsyncGenerator[Callable[[], AbstractAsyncContextManager[AsyncSession | None]]]:
     # Special case for single-user mode
     if engine is None:
-
-        def f():
-            return nullcontext()
-
+        yield nullcontext
     else:
         # Let the caller manage the lifecycle of the AsyncSession.
-        def f():
-            return AsyncSession(engine, autoflush=False, expire_on_commit=False)
+        yield partial(AsyncSession, engine, autoflush=False, expire_on_commit=False)
+
+
+async def get_authentication_database_session_factory(
+    engine: AsyncEngine | None = Depends(get_database_engine),
+) -> AsyncGenerator[Callable[[], AsyncSession]]:
+    # Authentication routes are only mounted when authenticators are configured,
+    # and build_app always configures a database in that case.
+    if engine is None:
+        raise RuntimeError(
+            "Authentication routes require a database, but none is configured."
+        )
+
+    def f():
+        return AsyncSession(engine, autoflush=False, expire_on_commit=False)
 
     yield f
 
@@ -137,7 +151,8 @@ def is_memory_sqlite(url: URL | str) -> bool:
         return True
 
     # Check for mode=memory query parameter
-    if (mode := url.query.get("mode")) and mode.lower() == "memory":
+    mode = url.query.get("mode")
+    if isinstance(mode, str) and mode.lower() == "memory":
         return True
 
     return False

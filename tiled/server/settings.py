@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # "env_prefix does not apply to fields with alias"
     # https://docs.pydantic.dev/latest/concepts/pydantic_settings/#environment-variable-names
     database_settings: DatabaseSettings = Field(
-        DatabaseSettings(), validation_alias="TILED_DATABASE"
+        default=DatabaseSettings(), validation_alias="TILED_DATABASE"
     )
     # Connection pool configurations for catalog and storage DBs
     catalog_pool_size: int = 5

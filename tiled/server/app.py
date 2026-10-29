@@ -7,6 +7,7 @@ import secrets
 import sys
 import urllib.parse
 import warnings
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import cache, partial
 from pathlib import Path
@@ -20,6 +21,7 @@ from asgi_correlation_id import CorrelationIdMiddleware, correlation_id
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.models import OAuth2 as OAuth2Model
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -200,7 +202,7 @@ def build_app(
     compression_registry = compression_registry or default_compression_registry
     validation_registry = validation_registry or default_validation_registry
 
-    tasks: TaskMap = {
+    app_tasks: TaskMap = {
         "startup": (tasks or {}).get("startup", []),
         "background": (tasks or {}).get("background", []),
         "shutdown": (tasks or {}).get("shutdown", []),
@@ -208,9 +210,9 @@ def build_app(
     # The tasks are collected at config-parsing time off of the sub-trees.
     # Collect the tasks off the root tree here, so that it works when
     # a single tree is passed to build_app(...) directly, as happens in the tests.
-    tasks["startup"].extend(getattr(tree, "startup_tasks", []))
-    tasks["background"].extend(getattr(tree, "background_tasks", []))
-    tasks["shutdown"].extend(getattr(tree, "shutdown_tasks", []))
+    app_tasks["startup"].extend(getattr(tree, "startup_tasks", []))
+    app_tasks["background"].extend(getattr(tree, "background_tasks", []))
+    app_tasks["shutdown"].extend(getattr(tree, "shutdown_tasks", []))
 
     if scalable:
         streaming_cache = server_settings.get("streaming_cache", None)
@@ -285,7 +287,7 @@ def build_app(
     # If we reach here, the no configuration problems were found.
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         "Manage lifespan events for each event loop that the app runs in"
         try:
             await startup_event()
@@ -443,9 +445,7 @@ def build_app(
     )
 
     @app.exception_handler(Exception)
-    async def unhandled_exception_handler(
-        request: Request, exc: Exception
-    ) -> JSONResponse:
+    async def unhandled_exception_handler(request: Request, exc: Exception) -> Response:
         return await http_exception_handler(
             request,
             HTTPException(
@@ -505,7 +505,11 @@ def build_app(
 
         # For the OpenAPI schema, inject a OAuth2PasswordBearer URL.
         first_provider = next(iter(authenticators))
-        oauth2_scheme.model.flows.password.tokenUrl = (
+        oauth2_model = oauth2_scheme.model
+        # OAuth2PasswordBearer always builds an OAuth2 model with a password flow.
+        assert isinstance(oauth2_model, OAuth2Model)
+        assert oauth2_model.flows.password is not None
+        oauth2_model.flows.password.tokenUrl = (
             f"/api/v1/auth/provider/{first_provider}/token"
         )
         # Authenticators provide Router(s) for their particular flow.
@@ -591,7 +595,7 @@ def build_app(
             settings.authenticator = authenticator
         return settings
 
-    async def startup_event():
+    async def startup_event() -> None:
         from .. import __version__
 
         logger.info(f"Tiled version {__version__}")
@@ -662,14 +666,14 @@ def build_app(
             )
 
         # Run startup tasks collected from trees (adapters).
-        for task in tasks["startup"]:
+        for task in app_tasks["startup"]:
             await task()
 
         # Stash these to cancel this on shutdown.
         app.state.tasks = []
         # Trees and Authenticators can run tasks in the background.
         background_tasks: list[AppTask] = []
-        background_tasks.extend(tasks["background"])
+        background_tasks.extend(app_tasks["background"])
         for authenticator in authenticators:
             background_tasks.extend(getattr(authenticator, "background_tasks", []))
         for task in background_tasks:
@@ -882,9 +886,9 @@ def build_app(
                 asyncio.create_task(purge_expired_sessions_and_api_keys())
             )
 
-    async def shutdown_event():
+    async def shutdown_event() -> None:
         # Run shutdown tasks collected from trees (adapters).
-        for task in tasks["shutdown"]:
+        for task in app_tasks["shutdown"]:
             await task()
 
         # Stop background tasks, and wait for them to finish, before closing the
@@ -927,7 +931,9 @@ def build_app(
             csrf_token = request.headers.get(CSRF_HEADER_NAME)
             if csrf_token is None:
                 parsed_query = urllib.parse.parse_qs(request.url.query)
-                csrf_token = parsed_query.get(CSRF_QUERY_PARAMETER)
+                csrf_token = next(
+                    iter(parsed_query.get(CSRF_QUERY_PARAMETER, [])), None
+                )
             if not csrf_token:
                 return Response(
                     status_code=HTTP_403_FORBIDDEN,
@@ -1060,16 +1066,12 @@ def build_app(
         async def capture_metrics_prometheus(
             request: Request, call_next: RequestResponseEndpoint
         ):
+            # Ephemeral response solely for 'capture_request_metrics', used
+            # if call_next raises; the exception still propagates so the server
+            # can send an appropriate response to the client.
+            response = Response(status_code=HTTP_500_INTERNAL_SERVER_ERROR)
             try:
                 response = await call_next(request)
-            except Exception:
-                # Make an ephemeral response solely for 'capture_request_metrics'.
-                # It will only be used in the 'finally' clean-up block.
-                only_for_metrics = Response(status_code=HTTP_500_INTERNAL_SERVER_ERROR)
-                response = only_for_metrics
-                # Now re-raise the exception so that the server can generate and
-                # send an appropriate response to the client.
-                raise
             finally:
                 metrics.capture_request_metrics(request, response)
 

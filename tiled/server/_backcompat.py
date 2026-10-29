@@ -210,4 +210,8 @@ def access_tags_from_request(body) -> AccessTags | None:
         raise ConflictingAccessFields(
             "Cannot specify both 'access_tags' and the deprecated 'access_blob'."
         )
-    return access_tags_from_access_blob(legacy_access_blob(body))
+    access_blob = legacy_access_blob(body)
+    if access_blob is None:
+        # An explicit null says no more about access than an empty blob.
+        return None
+    return access_tags_from_access_blob(access_blob)

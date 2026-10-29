@@ -39,10 +39,10 @@ from strawberry.scalars import JSON as StrawberryJSON
 from strawberry.types import Info
 from strawberry.types.unset import UNSET, UnsetType
 
-from tiled.access_control.access_policies import NO_ACCESS
 from tiled.access_control.protocols import normalize_access_tags
 from tiled.queries import AccessTagsFilter
 from tiled.type_aliases import AccessTags
+from tiled.utils import Sentinel
 
 from .curie import compact_term, compact_value, expand_term, expand_value
 from .orm import ENTITY_NODE_ACCESS_TAGS_ERROR
@@ -143,7 +143,9 @@ def _assert_authn_scope(info: Info, scope: str) -> None:
         raise GraphQLError("Not permitted")
 
 
-async def _policy_access_filters(info: Info, scope: str) -> object:
+async def _policy_access_filters(
+    info: Info, scope: str
+) -> list[AccessTagsFilter] | Sentinel:
     """
     Return the access-policy filters for a listing query: either a list of
     AccessTagsFilter (possibly empty, meaning no restriction) or the
@@ -163,15 +165,17 @@ async def _policy_access_filters(info: Info, scope: str) -> object:
         info.context["authn_scopes"],
         {scope},
     )
-    if queries is NO_ACCESS:
-        return NO_ACCESS
+    if isinstance(queries, Sentinel):
+        return queries
+    filters: list[AccessTagsFilter] = []
     for query in queries:
         if not isinstance(query, AccessTagsFilter):
             raise GraphQLError(
                 f"Unsupported access-policy filter in graph queries: {type(query).__name__}"
             )
         query.tag_ids = await _store(info).resolve_access_tag_ids_for_read(query.tags)
-    return queries
+        filters.append(query)
+    return filters
 
 
 def _access_tags_from_input(access_tags: list[str]) -> AccessTags:
@@ -239,7 +243,7 @@ class Entity:
     entity_type: str
     name: str
     uri: str | None
-    properties: JSON | None  # type: ignore[valid-type]
+    properties: JSON | None
     created_at: str
 
     @strawberry.field(description="Links where this entity is the subject.")
@@ -251,7 +255,7 @@ class Entity:
         offset: int = 0,
     ) -> list[Link]:
         access_filters = await _policy_access_filters(info, "read:metadata")
-        if access_filters is NO_ACCESS:
+        if isinstance(access_filters, Sentinel):
             return []
         namespaces = await _namespaces(info)
         expanded_predicate = expand_term(predicate, namespaces) if predicate else None
@@ -273,7 +277,7 @@ class Entity:
         offset: int = 0,
     ) -> list[Link]:
         access_filters = await _policy_access_filters(info, "read:metadata")
-        if access_filters is NO_ACCESS:
+        if isinstance(access_filters, Sentinel):
             return []
         namespaces = await _namespaces(info)
         expanded_predicate = expand_term(predicate, namespaces) if predicate else None
@@ -293,7 +297,7 @@ class Link:
     subject_id: strawberry.ID
     predicate: str
     object_id: strawberry.ID
-    properties: JSON | None  # type: ignore[valid-type]
+    properties: JSON | None
     access_tags: list[str]
     created_at: str
 
@@ -332,7 +336,7 @@ class Namespace:
 
 
 def _entity_from_record(r: EntityRecord, namespaces: dict[str, str]) -> Entity:
-    properties = compact_value(r.properties, namespaces) if r.properties else None
+    properties = JSON(compact_value(r.properties, namespaces)) if r.properties else None
     return Entity(
         id=strawberry.ID(r.id),
         is_node_bound=r.node_id is not None,
@@ -345,7 +349,7 @@ def _entity_from_record(r: EntityRecord, namespaces: dict[str, str]) -> Entity:
 
 
 def _link_from_record(r: LinkRecord, namespaces: dict[str, str]) -> Link:
-    properties = compact_value(r.properties, namespaces) if r.properties else None
+    properties = JSON(compact_value(r.properties, namespaces)) if r.properties else None
     return Link(
         id=strawberry.ID(r.id),
         subject_id=strawberry.ID(r.subject_id),
@@ -389,7 +393,7 @@ class CreateEntityInput:
     # is not tied to a node in this server's catalog.
     node_path_parts: list[str] | None = None
     uri: str | None = None
-    properties: JSON | None = None  # type: ignore[valid-type]
+    properties: JSON | None = None
     access_tags: list[str] | None = None
 
 
@@ -398,7 +402,7 @@ class CreateLinkInput:
     subject_id: strawberry.ID
     predicate: str
     object_id: strawberry.ID
-    properties: JSON | None = None  # type: ignore[valid-type]
+    properties: JSON | None = None
     access_tags: list[str] | None = None
 
 
@@ -429,7 +433,7 @@ class Query:
         offset: int = 0,
     ) -> list[Entity]:
         access_filters = await _policy_access_filters(info, "read:metadata")
-        if access_filters is NO_ACCESS:
+        if isinstance(access_filters, Sentinel):
             return []
         node_id = None
         if node_path_parts is not None:
@@ -469,7 +473,7 @@ class Query:
         offset: int = 0,
     ) -> list[Link]:
         access_filters = await _policy_access_filters(info, "read:metadata")
-        if access_filters is NO_ACCESS:
+        if isinstance(access_filters, Sentinel):
             return []
         namespaces = await _namespaces(info)
         expanded_predicate = expand_term(predicate, namespaces) if predicate else None
@@ -597,7 +601,7 @@ class Mutation:
         # Resolve the requested node binding into a tri-state on the internal
         # node id: UNSET (leave), None (detach), or an int (bind).
         # node_path_parts is resolved to the id, so the store never sees a path.
-        if input.node_path_parts is UNSET:
+        if isinstance(input.node_path_parts, UnsetType):
             node_id = STORE_UNSET
         elif input.node_path_parts is None:
             node_id = None
@@ -607,10 +611,12 @@ class Mutation:
         effective_node_id = current.node_id if node_id is STORE_UNSET else node_id
         access_tags = UNSET
         if effective_node_id is not None:
-            if input.access_tags is not UNSET and (input.access_tags or []):
+            if not isinstance(input.access_tags, UnsetType) and (
+                input.access_tags or []
+            ):
                 raise GraphQLError(ENTITY_NODE_ACCESS_TAGS_ERROR)
             access_tags = None
-        elif input.access_tags is not UNSET:
+        elif not isinstance(input.access_tags, UnsetType):
             requested_access_tags = (
                 _access_tags_from_input(input.access_tags)
                 if input.access_tags is not None
@@ -630,14 +636,16 @@ class Mutation:
             # access tags supplied in the same call: the entity needs its
             # own access tags now that it no longer delegates to a node.
             access_tags = await _init_access_tags(info, None)
-        uri = STORE_UNSET if input.uri is UNSET else input.uri
+        uri = STORE_UNSET if isinstance(input.uri, UnsetType) else input.uri
         record = await _store(info).update_entity(
             str(id),
             name=input.name,
             node_id=node_id,
             uri=uri,
             entity_type=input.entity_type,
-            access_tags=STORE_UNSET if access_tags is UNSET else access_tags,
+            access_tags=STORE_UNSET
+            if isinstance(access_tags, UnsetType)
+            else access_tags,
         )
         if record:
             logger.info("Updated entity id=%s", id)
@@ -668,7 +676,7 @@ class Mutation:
         )
         namespaces = await _namespaces(info)
         access_tags = UNSET
-        if input.access_tags is not UNSET:
+        if not isinstance(input.access_tags, UnsetType):
             requested_access_tags = (
                 _access_tags_from_input(input.access_tags)
                 if input.access_tags is not None
@@ -677,15 +685,19 @@ class Mutation:
             access_tags = await _modify_access_tags(
                 info, normalize_access_tags(current.access_tags), requested_access_tags
             )
+        if input.predicate is None:
+            raise GraphQLError("predicate cannot be null")
         predicate = (
             STORE_UNSET
-            if input.predicate is UNSET
+            if isinstance(input.predicate, UnsetType)
             else expand_term(input.predicate, namespaces)
         )
         record = await _store(info).update_link(
             str(id),
             predicate=predicate,
-            access_tags=STORE_UNSET if access_tags is UNSET else access_tags,
+            access_tags=STORE_UNSET
+            if isinstance(access_tags, UnsetType)
+            else access_tags,
         )
         if record:
             logger.info("Updated link id=%s predicate=%r", id, input.predicate)

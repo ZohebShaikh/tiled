@@ -7,6 +7,8 @@ compact terms read back out, so prefixes resolve consistently.
 
 from __future__ import annotations
 
+from typing import Any, overload
+
 
 def split_curie(term: str) -> tuple[str, str] | None:
     if term.startswith("@"):
@@ -42,6 +44,10 @@ def compact_term(term: str, namespaces: dict[str, str]) -> str:
     return term
 
 
+@overload
+def expand_value(value: dict, namespaces: dict[str, str]) -> dict: ...
+@overload
+def expand_value(value: Any, namespaces: dict[str, str]) -> Any: ...
 def expand_value(value, namespaces: dict[str, str]):
     if isinstance(value, dict):
         return {
@@ -53,6 +59,10 @@ def expand_value(value, namespaces: dict[str, str]):
     return value
 
 
+@overload
+def compact_value(value: dict, namespaces: dict[str, str]) -> dict: ...
+@overload
+def compact_value(value: Any, namespaces: dict[str, str]) -> Any: ...
 def compact_value(value, namespaces: dict[str, str]):
     if isinstance(value, dict):
         return {

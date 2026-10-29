@@ -6,7 +6,7 @@ conventions for metrics & labels. We generally prefer naming them
 
 from prometheus_client import Counter, Gauge, Histogram
 from sqlalchemy import event
-from sqlalchemy.pool import QueuePool, StaticPool
+from sqlalchemy.pool import Pool, QueuePool
 
 REQUEST_DURATION = Histogram(
     "tiled_request_duration_seconds",
@@ -181,12 +181,12 @@ def capture_request_metrics(request, response):
             ).observe(metrics["compress"]["ratio"])
 
 
-def monitor_db_pool(pool: QueuePool, name: str):
+def monitor_db_pool(pool: Pool, name: str):
     """Set up monitoring of a SQLAlchemy Engine's connection pool.
 
     Parameters
     ----------
-        pool : sqlalchemy.pool.QueuePool
+        pool : sqlalchemy.pool.Pool
             The connection pool to monitor.
         name : str
             A name for this pool/engine, typically the sanitized database URI.
@@ -220,8 +220,8 @@ def monitor_db_pool(pool: QueuePool, name: str):
         DB_POOL_CHECKEDOUT.labels(name).inc()
         DB_POOL_CHECKOUTS_TOTAL.labels(name).inc()
 
-        # Skip for single-connection database:
-        if isinstance(pool, StaticPool):
+        # Overflow only applies to queue pools (not, e.g., single-connection StaticPool).
+        if not isinstance(pool, QueuePool):
             return
 
         # First overflow: we just used the very first overflow slot

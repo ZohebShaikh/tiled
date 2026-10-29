@@ -4,7 +4,6 @@ import re
 
 import numcodecs
 import orjson
-import pydantic_settings
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import Response
 from starlette.status import (
@@ -16,7 +15,7 @@ from starlette.status import (
 
 from ..adapters.utils import DataNotReadyError, ShapeMismatchError
 from ..structures.core import StructureFamily
-from ..type_aliases import AccessTags, Scopes
+from ..type_aliases import AccessTags, Chunks, Scopes
 from ..utils import ensure_awaitable
 from .authentication import (
     get_current_access_tags,
@@ -46,7 +45,7 @@ zarr_codec = numcodecs.get_codec(ZARR_CODEC_SPEC)
 ARRAY_RETRY_AFTER_SECONDS = int(os.getenv("TILED_ARRAY_RETRY_AFTER", "1"))
 
 
-def convert_chunks_for_zarr(tiled_chunks: tuple[tuple[int]]):
+def convert_chunks_for_zarr(tiled_chunks: Chunks):
     """Convert full tiled/dask chunk specification into zarr format
 
     Zarr only accepts chunks of constant size along each dimension; this function
@@ -66,10 +65,10 @@ def get_zarr_router_v2() -> APIRouter:
     async def get_zarr_attrs(
         request: Request,
         path: str,
-        principal: Principal = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
     ):
         "Return entry.metadata as Zarr attributes metadata (.zattrs)"
@@ -102,10 +101,10 @@ def get_zarr_router_v2() -> APIRouter:
     async def get_zarr_group_metadata(
         request: Request,
         path: str,
-        principal: Principal = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
     ):
         await get_entry(
@@ -130,10 +129,10 @@ def get_zarr_router_v2() -> APIRouter:
     async def get_zarr_array_metadata(
         request: Request,
         path: str,
-        principal: Principal = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
     ):
         entry = await get_entry(
@@ -148,7 +147,13 @@ def get_zarr_router_v2() -> APIRouter:
             structure_families={StructureFamily.array, StructureFamily.sparse},
             access_policy=getattr(request.app.state, "access_policy", None),
         )
+        # get_entry() has already checked this.
+        assert (
+            entry.structure_family == StructureFamily.array
+            or entry.structure_family == StructureFamily.sparse
+        )
         structure = entry.structure()
+        assert structure.data_type is not None
         try:
             zarray_spec = {
                 "chunks": convert_chunks_for_zarr(structure.chunks),
@@ -174,10 +179,10 @@ def get_zarr_router_v2() -> APIRouter:
     async def get_zarr_array(
         request: Request,
         path: str,
-        principal: Principal = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
     ):
         # If a zarr block is requested, e.g. http://localhost:8000/zarr/v2/array/0.1.2.3,
@@ -208,8 +213,9 @@ def get_zarr_router_v2() -> APIRouter:
 
         if entry.structure_family == StructureFamily.container:
             # List the contents of a "simulated" zarr directory (excluding .zarray and .zgroup files)
-            if hasattr(entry, "keys_range"):
-                keys = await entry.keys_range()
+            keys_range = getattr(entry, "keys_range", None)
+            if keys_range is not None:
+                keys = await keys_range()
             else:
                 keys = entry.keys()
             url = str(request.url).rstrip("/")
@@ -224,7 +230,10 @@ def get_zarr_router_v2() -> APIRouter:
 
             return Response(body, status_code=200)
 
-        elif entry.structure_family in {StructureFamily.array, StructureFamily.sparse}:
+        elif (
+            entry.structure_family == StructureFamily.array
+            or entry.structure_family == StructureFamily.sparse
+        ):
             # Return the actual array values for a single block of zarr array
             if zarr_block_indx is not None:
                 import numpy as np
@@ -303,13 +312,14 @@ def get_zarr_router_v3() -> APIRouter:
     async def get_zarr_metadata(
         request: Request,
         path: str,
-        principal: Principal = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
     ):
-        from zarr.dtype import parse_data_type
+        from zarr.core.dtype import parse_data_type
+        from zarr.core.dtype.common import HasItemSize
 
         entry = await get_entry(
             path,
@@ -330,14 +340,31 @@ def get_zarr_router_v3() -> APIRouter:
         )
 
         # Array or sparse array
-        if entry.structure_family in {StructureFamily.array, StructureFamily.sparse}:
+        if (
+            entry.structure_family == StructureFamily.array
+            or entry.structure_family == StructureFamily.sparse
+        ):
             structure = entry.structure()
+            assert structure.data_type is not None
             zarr_dtype = parse_data_type(
                 structure.data_type.to_numpy_descr(), zarr_format=3
             )
             fill_value = (
                 zarr_dtype.default_scalar() if structure.shape else entry.read()[()]
             )
+
+            assert isinstance(zarr_dtype, HasItemSize)
+            codec_config: dict = {"typesize": zarr_dtype.item_size}
+            for k, v in zarr_codec.get_config().items():
+                if k == "id":
+                    continue
+                if k == "shuffle" and isinstance(v, int):
+                    codec_config[k] = {1: "shuffle", 0: "no_shuffle", 2: "bitshuffle"}[
+                        v
+                    ]
+                else:
+                    codec_config[k] = v
+
             result = {
                 "zarr_format": 3,
                 "node_type": "array",
@@ -358,26 +385,14 @@ def get_zarr_router_v3() -> APIRouter:
                     {"name": "bytes", "configuration": {"endian": "little"}},
                     {
                         "name": zarr_codec.codec_id,
-                        "configuration": {
-                            "typesize": zarr_dtype.item_size,
-                            **{
-                                k: v
-                                if k != "shuffle"
-                                else {1: "shuffle", 0: "no_shuffle", 2: "bitshuffle"}[v]
-                                for k, v in zarr_codec.get_config().items()
-                                if k != "id"
-                            },
-                        },
+                        "configuration": codec_config,
                     },
                 ],
                 "dimension_names": list(structure.dims) if structure.dims else None,
                 "attributes": entry.metadata(),
             }
 
-        elif entry.structure_family in {
-            StructureFamily.container,
-            StructureFamily.table,
-        }:
+        else:
             # Structured numpy array, Container, or Table
             result = {
                 "zarr_format": 3,
@@ -395,10 +410,10 @@ def get_zarr_router_v3() -> APIRouter:
         request: Request,
         path: str,
         block: str,
-        principal: Principal = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
     ):
         entry = await get_entry(
@@ -415,6 +430,11 @@ def get_zarr_router_v3() -> APIRouter:
                 StructureFamily.sparse,
             },
             access_policy=getattr(request.app.state, "access_policy", None),
+        )
+        # get_entry() has already checked this.
+        assert (
+            entry.structure_family == StructureFamily.array
+            or entry.structure_family == StructureFamily.sparse
         )
 
         if block is not None:
@@ -486,10 +506,10 @@ def get_zarr_router_v3() -> APIRouter:
     async def get_zarr_group(
         request: Request,
         path: str,
-        principal: Principal = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        root_tree: pydantic_settings.BaseSettings = Depends(get_root_tree),
+        root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
     ):
         entry = await get_entry(
@@ -514,8 +534,9 @@ def get_zarr_router_v3() -> APIRouter:
 
         if entry.structure_family == StructureFamily.container:
             # List the contents of a "simulated" zarr directory (excluding .zarray and .zgroup files)
-            if hasattr(entry, "keys_range"):
-                keys = await entry.keys_range()
+            keys_range = getattr(entry, "keys_range", None)
+            if keys_range is not None:
+                keys = await keys_range()
             else:
                 keys = entry.keys()
             body = json.dumps([url + "/" + key for key in keys])
