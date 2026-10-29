@@ -41,6 +41,7 @@ Write the date in place of the "Unreleased" in the case a new version is release
 
 ### Fixed
 
+- Exporting a sparse array as Excel, Parquet, CSV, plain text or HTML raised `TypeError`.
 - Fixed `ArrayClient.patch` on arrays whose shape is not a whole number of
   chunks. The check for writing past the end, and the new shape after
   `extend=True`, used the Zarr array's shape, which is rounded up to whole
