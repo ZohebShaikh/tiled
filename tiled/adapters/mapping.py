@@ -266,10 +266,10 @@ class MapAdapter(Generic[A], ContainerAdapter[A], IndexersMixin):
             # *args,
             mapping=cast(dict[str, A], mapping),
             sorting=cast(list[SortingItem], sorting),
-            metadata=cast(JSON, self._metadata),
+            metadata=cast(JSON, metadata),
             specs=self.specs,
             entries_stale_after=self.entries_stale_after,
-            metadata_stale_after=self.entries_stale_after,
+            metadata_stale_after=self.metadata_stale_after,
             must_revalidate=cast(bool, must_revalidate),
             **kwargs,
         )
