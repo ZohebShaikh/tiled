@@ -89,6 +89,15 @@ def test_serve_catalog_temp(args, tmp_path):
         check_server_readiness(process)
 
 
+def test_serve_catalog_with_cache(tmp_path):
+    "Test 'tiled serve catalog --cache' on a persistent (not --temp) catalog."
+    database = tmp_path / "catalog.db"
+    with run_cli(
+        f"tiled serve catalog {database!s} --init --cache memory --port 0"
+    ) as process:
+        check_server_readiness(process)
+
+
 @pytest.mark.parametrize(
     "args",
     [

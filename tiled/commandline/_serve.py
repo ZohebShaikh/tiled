@@ -393,7 +393,7 @@ def serve_catalog(
     import urllib.parse
 
     from ..catalog import from_uri
-    from ..config import Authentication
+    from ..config import Authentication, StreamingCacheConfig
     from ..server.app import build_app, print_server_info
 
     parsed_database = urllib.parse.urlparse(database)
@@ -434,7 +434,6 @@ def serve_catalog(
         from ..alembic_utils import stamp_head
         from ..catalog.alembic_constants import ALEMBIC_DIR, ALEMBIC_INI_TEMPLATE_PATH
         from ..catalog.core import initialize_database
-        from ..config import StreamingCacheConfig
         from ..utils import ensure_specified_sql_driver
 
         database = ensure_specified_sql_driver(database)
