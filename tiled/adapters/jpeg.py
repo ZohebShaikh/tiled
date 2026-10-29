@@ -1,5 +1,6 @@
 import builtins
-from typing import Any, Iterable, List, Optional, Tuple, Union
+from collections.abc import Iterable
+from typing import Any
 
 import numpy as np
 from numpy._typing import NDArray
@@ -34,8 +35,8 @@ class JPEGAdapter(ArrayAdapter):
         data_uri: str,
         structure: ArrayStructure,
         *,
-        metadata: Optional[JSON] = None,
-        specs: Optional[List[Spec]] = None,
+        metadata: JSON | None = None,
+        specs: list[Spec] | None = None,
     ) -> None:
         """
 
@@ -91,8 +92,8 @@ class JPEGAdapter(ArrayAdapter):
 
     def read_block(
         self,
-        block: Tuple[int, ...],
-        slice: Union[NDSlice, None] = None,
+        block: tuple[int, ...],
+        slice: NDSlice | None = None,
     ) -> NDArray[Any]:
         if sum(block) != 0:
             raise IndexError(block)
@@ -106,7 +107,7 @@ class JPEGAdapter(ArrayAdapter):
 
 class JPEGSequenceAdapter(FileSequenceAdapter):
     def _load_from_files(
-        self, slice: Union[builtins.slice, int, Iterable[int]] = slice(None)
+        self, slice: builtins.slice | int | Iterable[int] = slice(None)
     ) -> NDArray[Any]:
         if isinstance(slice, int):
             return self._read_one(self.filepaths[slice])[None, ...]

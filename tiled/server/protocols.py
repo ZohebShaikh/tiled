@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
     Any,
-    Optional,
     Protocol,
     TypeGuard,
     runtime_checkable,
@@ -23,22 +22,22 @@ class UserSessionState:
     """Data transfer class to communicate custom session state information."""
 
     user_name: str
-    state: Optional[dict] = None
+    state: dict | None = None
 
 
 class InternalAuthenticator(ABC):
     async def authenticate(
         self, username: str, password: str
-    ) -> Optional[UserSessionState]:
+    ) -> UserSessionState | None:
         raise NotImplementedError
 
 
 class ExternalAuthenticator(ABC):
     # Where to send the browser after authenticating, if anywhere.
-    redirect_on_success: Optional[str] = None
-    redirect_on_failure: Optional[str] = None
+    redirect_on_success: str | None = None
+    redirect_on_failure: str | None = None
 
-    async def authenticate(self, request: Request) -> Optional[UserSessionState]:
+    async def authenticate(self, request: Request) -> UserSessionState | None:
         raise NotImplementedError
 
 
@@ -55,7 +54,7 @@ class OAuth2Authorizer(Protocol):
     @property
     def authorization_endpoint(self) -> "httpx.URL": ...
 
-    async def authenticate(self, request: Request) -> Optional[UserSessionState]: ...
+    async def authenticate(self, request: Request) -> UserSessionState | None: ...
 
 
 def is_oauth2_authorizer(obj: object) -> TypeGuard[OAuth2Authorizer]:

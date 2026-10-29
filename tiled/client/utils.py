@@ -4,11 +4,11 @@ import os
 import sys
 import uuid
 from collections import defaultdict
-from collections.abc import Hashable
+from collections.abc import Callable, Hashable
 from dataclasses import asdict
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Callable, Optional, TypeVar, Union
+from typing import TYPE_CHECKING, TypeVar
 from urllib.parse import parse_qs, urlparse
 from weakref import WeakValueDictionary
 
@@ -477,11 +477,9 @@ def params_from_slice(slice):
                         "Slices with a 'step' other than 1 are not supported."
                     )
                 slices.append(
-                    (
-                        (str(dim.start) if dim.start else "")
-                        + ":"
-                        + (str(dim.stop) if dim.stop else "")
-                    )
+                    (str(dim.start) if dim.start else "")
+                    + ":"
+                    + (str(dim.stop) if dim.stop else "")
                 )
             else:
                 slices.append(str(int(dim)))
@@ -591,8 +589,8 @@ def chunks_repr(chunks: Chunks) -> str:
 
 
 def normalize_specs(
-    specs: Optional[Union[list[str], list[Spec], str]],
-) -> Optional[list[dict[str, str]]]:
+    specs: list[str] | list[Spec] | str | None,
+) -> list[dict[str, str]] | None:
     "Represent a list of Spec objects or strings as a list of dicts"
 
     if specs is None:
@@ -671,7 +669,7 @@ class ProgressState:
         self._progress = progress
         self._task_id = task_id
         self._spinner = spinner
-        self._live: Optional["Live"] = None
+        self._live: Live | None = None
         self._retrying = False
 
     def advance(self):
@@ -714,8 +712,8 @@ class StandaloneRetryIndicator:
 
     def __init__(self):
         self._showing = False
-        self._live: Optional["Live"] = None  # terminal spinner
-        self._label: Optional["Label"] = None  # Jupyter widget
+        self._live: Live | None = None  # terminal spinner
+        self._label: Label | None = None  # Jupyter widget
 
     @staticmethod
     def _stderr_is_tty():

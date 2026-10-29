@@ -1,6 +1,6 @@
 import os
+from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import AsyncGenerator, Dict, Optional
 
 import httpx2 as httpx
 
@@ -17,8 +17,8 @@ class TiledAuth(httpx.Auth):
         refresh_url,
         csrf_token,
         token_directory,
-        client_id: Optional[str] = None,
-        scopes: Optional[str] = None,
+        client_id: str | None = None,
+        scopes: str | None = None,
     ):
         self.refresh_url = refresh_url
         self.csrf_token = csrf_token
@@ -74,7 +74,7 @@ class TiledAuth(httpx.Auth):
         with self._sync_lock:
             filepath = self.token_directory / key
             try:
-                with open(filepath, "r") as file:
+                with open(filepath) as file:
                     token = file.read()
                     self.tokens[key] = token
                     return token
@@ -152,7 +152,7 @@ class TiledAuth(httpx.Auth):
         request.headers["Authorization"] = f"Bearer {tokens['access_token']}"
         yield request
 
-    def sync_tokens(self, tokens: Dict[str, str]):
+    def sync_tokens(self, tokens: dict[str, str]):
         self.sync_set_token("refresh_token", tokens["refresh_token"])
         self.sync_set_token("access_token", tokens["access_token"])
         if id_token := tokens.get("id_token"):
@@ -178,8 +178,8 @@ def build_refresh_request(
     refresh_url,
     refresh_token,
     csrf_token,
-    client_id: Optional[str] = None,
-    scopes: Optional[str] = None,
+    client_id: str | None = None,
+    scopes: str | None = None,
 ):
     if client_id:
         return httpx.Request(

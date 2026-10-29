@@ -8,16 +8,15 @@ import enum
 import importlib
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Optional
+from typing import Annotated, Any
 
 from pydantic import StringConstraints
-from typing_extensions import Annotated
 
 from ..utils import OneShotCachedMap, filter_known_kwargs
 from .root import Structure
 
 
-class StructureFamily(str, enum.Enum):
+class StructureFamily(enum.StrEnum):
     array = "array"
     awkward = "awkward"
     bytes = "bytes"
@@ -30,7 +29,7 @@ class StructureFamily(str, enum.Enum):
 @dataclass(frozen=True)
 class Spec:
     name: Annotated[str, StringConstraints(max_length=255)]
-    version: Optional[Annotated[str, StringConstraints(max_length=255)]] = None
+    version: Annotated[str, StringConstraints(max_length=255)] | None = None
 
     def __init__(self, name, version=None) -> None:
         # Enable the name to be passed as a position argument.
@@ -46,7 +45,7 @@ class Spec:
             output = f"{type(self).__name__}({self.name!r}, version={self.version!r})"
         return output
 
-    def dict(self) -> Dict[str, Optional[str]]:
+    def dict(self) -> dict[str, str | None]:
         # For easy interoperability with pydantic 1.x models
         return asdict(self)
 

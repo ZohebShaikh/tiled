@@ -1,7 +1,8 @@
 import itertools as it
 import time
 import warnings
-from typing import TYPE_CHECKING, Iterable, Optional, Self, Union
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Self
 from urllib.parse import parse_qs, urlparse
 
 from ..structures.core import StructureFamily
@@ -117,7 +118,7 @@ class CompositeClient(Container):
     # recursive option does not apply.
     def delete_contents(  # pyright: ignore[reportIncompatibleMethodOverride]
         self,
-        keys: Optional[Union[str, Iterable[str]]] = None,
+        keys: str | Iterable[str] | None = None,
         external_only: bool = True,
     ) -> Self:
         """Delete the contents of this Composite node.
@@ -332,7 +333,7 @@ class CompositeClient(Container):
         metadata=None,
         specs=None,
         access_tags=None,
-        table_name: Optional[str] = None,
+        table_name: str | None = None,
     ):
         if set(self.keys()).intersection(schema.names):
             raise ValueError(

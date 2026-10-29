@@ -1,6 +1,6 @@
 from abc import abstractmethod
 from collections.abc import Mapping
-from typing import Any, ClassVar, Generic, Literal, Optional
+from typing import Any, ClassVar, Generic, Literal
 
 from tiled.adapters.core import A, Adapter
 from tiled.structures.container import ContainerStructure
@@ -13,5 +13,5 @@ class ContainerAdapter(Adapter[ContainerStructure], Mapping[str, A], Generic[A])
     )
 
     @abstractmethod
-    def read(self, fields: Optional[str] = None) -> Any:
+    def read(self, fields: str | None = None) -> Any:
         pass

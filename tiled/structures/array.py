@@ -5,7 +5,7 @@ import os
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, ClassVar, List, Optional, Tuple, Union
+from typing import Any, ClassVar
 
 import numpy
 
@@ -16,12 +16,12 @@ from ..type_aliases import Chunks
 # from dtype.descr
 # (name, type) or (name, type, shape); type is a dtype string or, for a
 # nested struct, that struct's descr.
-_FieldType = Union[str, List["FieldDescr"]]
-FieldDescr = Union[Tuple[str, _FieldType], Tuple[str, _FieldType, Tuple[int, ...]]]
-NumpyDescr = List[FieldDescr]
+_FieldType = str | list["FieldDescr"]
+FieldDescr = tuple[str, _FieldType] | tuple[str, _FieldType, tuple[int, ...]]
+NumpyDescr = list[FieldDescr]
 
 
-class Endianness(str, enum.Enum):
+class Endianness(enum.StrEnum):
     """
     An enum of endian values: big, little, not_applicable.
     """
@@ -35,7 +35,7 @@ class ObjectArrayTypeDisabled(ValueError):
     pass
 
 
-class Kind(str, enum.Enum):
+class Kind(enum.StrEnum):
     """
     See https://numpy.org/devdocs/reference/arrays.interface.html#object.__array_interface__
 
@@ -90,7 +90,7 @@ class BuiltinDtype:
     endianness: Endianness
     kind: Kind
     itemsize: int
-    dt_units: Optional[str] = None
+    dt_units: str | None = None
 
     _endianness_map: ClassVar[Mapping[str, str]] = {
         ">": "big",
@@ -153,8 +153,8 @@ class BuiltinDtype:
 @dataclass
 class Field:
     name: str
-    dtype: Union[BuiltinDtype, "StructDtype"]
-    shape: Optional[Tuple[int, ...]]
+    dtype: "BuiltinDtype | StructDtype"
+    shape: tuple[int, ...] | None
 
     @classmethod
     def from_numpy_descr(cls, field: FieldDescr) -> "Field":
@@ -197,7 +197,7 @@ class Field:
 @dataclass
 class StructDtype:
     itemsize: int
-    fields: List[Field]
+    fields: list[Field]
 
     @classmethod
     def from_numpy_dtype(cls, dtype: numpy.dtype) -> "StructDtype":
@@ -235,11 +235,11 @@ class StructDtype:
 
 @dataclass
 class ArrayStructure(Structure):
-    data_type: Union[BuiltinDtype, StructDtype]
+    data_type: BuiltinDtype | StructDtype
     chunks: Chunks  # tuple-of-tuples-of-ints like ((3,), (3,))
-    shape: Tuple[int, ...]  # tuple of ints like (3, 3)
-    dims: Optional[Tuple[str, ...]] = None  # None or tuple of names like ("x", "y")
-    resizable: Union[bool, Tuple[bool, ...]] = False
+    shape: tuple[int, ...]  # tuple of ints like (3, 3)
+    dims: tuple[str, ...] | None = None  # None or tuple of names like ("x", "y")
+    resizable: bool | tuple[bool, ...] = False
 
     @classmethod
     def from_json(cls, structure: Mapping[str, Any]) -> "ArrayStructure":

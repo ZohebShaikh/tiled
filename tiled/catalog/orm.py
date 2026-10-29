@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -40,10 +40,10 @@ class Timestamped:
     forensics.
     """
 
-    time_created: Mapped[Optional[datetime]] = mapped_column(
+    time_created: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), server_default=func.now()
     )
-    time_updated: Mapped[Optional[datetime]] = mapped_column(
+    time_updated: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), onupdate=func.now(), server_default=func.now()
     )
 
@@ -69,7 +69,7 @@ class Node(Timestamped, Base):
 
     # This id is internal, never exposed to the client.
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    parent: Mapped[Optional[int]] = mapped_column(
+    parent: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("nodes.id", name="fk_nodes_parent", ondelete="CASCADE"),
         nullable=True,
@@ -100,7 +100,7 @@ class Node(Timestamped, Base):
     # inserts/deletes rows in node_access_tags_association (never in access_tags itself).
     # passive_deletes defers cleanup of association rows to the DB-level
     # ON DELETE CASCADE when a node is deleted.
-    access_tags: Mapped[List["AccessTag"]] = relationship(
+    access_tags: Mapped[list["AccessTag"]] = relationship(
         secondary="node_access_tags_association",
         lazy="selectin",
         passive_deletes=True,
@@ -174,12 +174,12 @@ class AccessTag(Timestamped, Base):
         Boolean, nullable=False, default=False, server_default=text("false")
     )
 
-    grants: Mapped[List["AccessGrant"]] = relationship(
+    grants: Mapped[list["AccessGrant"]] = relationship(
         back_populates="tag",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    owners: Mapped[List["AccessTagOwnerAssociation"]] = relationship(
+    owners: Mapped[list["AccessTagOwnerAssociation"]] = relationship(
         back_populates="tag",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -226,7 +226,7 @@ class NodeAccessTagAssociation(Base):
     # association scan to one container. Database triggers maintain this for
     # relationship-generated inserts and any future node moves. The root
     # node's association legitimately has a NULL parent_id.
-    parent_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    parent_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     __table_args__ = (
         PrimaryKeyConstraint(
@@ -362,12 +362,12 @@ class AccessTagsPrincipal(Timestamped, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(Unicode(255), nullable=False, unique=True)
 
-    grants: Mapped[List["AccessGrant"]] = relationship(
+    grants: Mapped[list["AccessGrant"]] = relationship(
         back_populates="principal",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    owned_tags: Mapped[List["AccessTagOwnerAssociation"]] = relationship(
+    owned_tags: Mapped[list["AccessTagOwnerAssociation"]] = relationship(
         back_populates="principal",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -511,8 +511,8 @@ class DataSourceAssetAssociation(Base):
         ForeignKey("assets.id", ondelete="CASCADE"),
         nullable=False,
     )
-    parameter: Mapped[Optional[str]] = mapped_column(Unicode(255), nullable=True)
-    num: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    parameter: Mapped[str | None] = mapped_column(Unicode(255), nullable=True)
+    num: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     data_source: Mapped["DataSource"] = relationship(
         back_populates="asset_associations"
@@ -814,7 +814,7 @@ class DataSource(Timestamped, Base):
     node_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    structure_id: Mapped[Optional[str]] = mapped_column(
+    structure_id: Mapped[str | None] = mapped_column(
         Unicode(32), ForeignKey("structures.id", ondelete="CASCADE"), nullable=True
     )
     mimetype: Mapped[str] = mapped_column(
@@ -822,9 +822,9 @@ class DataSource(Timestamped, Base):
     )  # max length given by RFC 4288
     # These are additional parameters passed to the Adapter to guide
     # it to access and arrange the data in the file correctly.
-    parameters: Mapped[Optional[Any]] = mapped_column(JSONVariant, nullable=True)
+    parameters: Mapped[Any | None] = mapped_column(JSONVariant, nullable=True)
     # These are additional properties describing the data source (e.g. array chunks).
-    properties: Mapped[Optional[Any]] = mapped_column(JSONVariant, nullable=True)
+    properties: Mapped[Any | None] = mapped_column(JSONVariant, nullable=True)
     # This relates to the mutability of the data.
     management: Mapped[Management] = mapped_column(Enum(Management), nullable=False)
     structure_family: Mapped[StructureFamily] = mapped_column(
@@ -839,7 +839,7 @@ class DataSource(Timestamped, Base):
     )
 
     # many-to-many relationship to Asset, bypassing the `Association` class
-    assets: Mapped[List["Asset"]] = relationship(
+    assets: Mapped[list["Asset"]] = relationship(
         secondary="data_source_asset_association",
         back_populates="data_sources",
         cascade="all, delete",
@@ -847,7 +847,7 @@ class DataSource(Timestamped, Base):
         viewonly=True,
     )
     # association between Asset -> Association -> DataSource
-    asset_associations: Mapped[List["DataSourceAssetAssociation"]] = relationship(
+    asset_associations: Mapped[list["DataSourceAssetAssociation"]] = relationship(
         back_populates="data_source",
         lazy="raise",
         order_by=[DataSourceAssetAssociation.parameter, DataSourceAssetAssociation.num],
@@ -884,22 +884,20 @@ class Asset(Timestamped, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
-    data_uri: Mapped[Optional[str]] = mapped_column(
-        Unicode(1023), index=True, unique=True
-    )
+    data_uri: Mapped[str | None] = mapped_column(Unicode(1023), index=True, unique=True)
     is_directory: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    hash_type: Mapped[Optional[str]] = mapped_column(Unicode(63), nullable=True)
-    hash_content: Mapped[Optional[str]] = mapped_column(Unicode(1023), nullable=True)
-    size: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    hash_type: Mapped[str | None] = mapped_column(Unicode(63), nullable=True)
+    hash_content: Mapped[str | None] = mapped_column(Unicode(1023), nullable=True)
+    size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     # # many-to-many relationship to Asset, bypassing the `Association` class
-    data_sources: Mapped[List["DataSource"]] = relationship(
+    data_sources: Mapped[list["DataSource"]] = relationship(
         secondary="data_source_asset_association",
         back_populates="assets",
         viewonly=True,
     )
     # association between DataSource -> Association -> Asset
-    data_source_associations: Mapped[List["DataSourceAssetAssociation"]] = relationship(
+    data_source_associations: Mapped[list["DataSourceAssetAssociation"]] = relationship(
         back_populates="asset",
     )
 
@@ -950,10 +948,10 @@ class Webhook(Timestamped, Base):
     )
     url: Mapped[str] = mapped_column(Unicode(2048), nullable=False)
     # HMAC-SHA256 secret; NULL means no signature header is sent.
-    secret: Mapped[Optional[str]] = mapped_column(Unicode(512), nullable=True)
+    secret: Mapped[str | None] = mapped_column(Unicode(512), nullable=True)
     # JSON list of event type strings, e.g. ["container-child-created"].
     # NULL / empty list means all events.
-    events: Mapped[Optional[Any]] = mapped_column(JSONVariant, nullable=True)
+    events: Mapped[Any | None] = mapped_column(JSONVariant, nullable=True)
     active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )
@@ -966,7 +964,7 @@ class Webhook(Timestamped, Base):
         lazy="noload",
     )
 
-    deliveries: Mapped[List["WebhookDelivery"]] = relationship(
+    deliveries: Mapped[list["WebhookDelivery"]] = relationship(
         back_populates="webhook",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -1004,18 +1002,18 @@ class WebhookDelivery(Timestamped, Base):
     # Full JSON payload that was (or would be) POSTed.
     payload: Mapped[Any] = mapped_column(JSONVariant, nullable=False)
     # HTTP status code of the last attempt, NULL while pending.
-    status_code: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Total number of attempts made so far.
     attempts: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
     )
-    delivered_at: Mapped[Optional[datetime]] = mapped_column(
+    delivered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), nullable=True
     )
     # "pending" | "success" | "failed"
     outcome: Mapped[str] = mapped_column(
         Unicode(16), nullable=False, default="pending", server_default=text("'pending'")
     )
-    error_detail: Mapped[Optional[str]] = mapped_column(Unicode(4096), nullable=True)
+    error_detail: Mapped[str | None] = mapped_column(Unicode(4096), nullable=True)
 
     webhook: Mapped["Webhook"] = relationship(back_populates="deliveries")

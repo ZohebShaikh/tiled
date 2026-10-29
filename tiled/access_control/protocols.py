@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Iterable, Optional, Protocol, Tuple, runtime_checkable
+from collections.abc import Iterable
+from typing import Protocol, runtime_checkable
 
 from ..adapters.protocols import BaseAdapter
 from ..server.schemas import Principal
@@ -43,28 +44,28 @@ class AccessPolicy(ABC):
     async def init_node(
         self,
         principal: Principal,
-        authn_access_tags: Optional[AccessTags],
+        authn_access_tags: AccessTags | None,
         authn_scopes: Scopes,
-        access_tags: Optional[AccessTags] = None,
-    ) -> Tuple[bool, AccessTags]:
+        access_tags: AccessTags | None = None,
+    ) -> tuple[bool, AccessTags]:
         pass
 
     async def modify_node(
         self,
         node: BaseAdapter,
         principal: Principal,
-        authn_access_tags: Optional[AccessTags],
+        authn_access_tags: AccessTags | None,
         authn_scopes: Scopes,
-        access_tags: Optional[AccessTags],
-    ) -> Tuple[bool, AccessTags]:
+        access_tags: AccessTags | None,
+    ) -> tuple[bool, AccessTags]:
         return (False, access_tags or normalize_access_tags())
 
     @abstractmethod
     async def allowed_scopes(
         self,
         node: BaseAdapter,
-        principal: Optional[Principal],
-        authn_access_tags: Optional[AccessTags],
+        principal: Principal | None,
+        authn_access_tags: AccessTags | None,
         authn_scopes: Scopes,
     ) -> Scopes:
         pass
@@ -73,8 +74,8 @@ class AccessPolicy(ABC):
     async def filters(
         self,
         node: BaseAdapter,
-        principal: Optional[Principal],
-        authn_access_tags: Optional[AccessTags],
+        principal: Principal | None,
+        authn_access_tags: AccessTags | None,
         authn_scopes: Scopes,
         scopes: Scopes,
     ) -> Filters:

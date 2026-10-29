@@ -3,14 +3,11 @@ import builtins
 import itertools
 import math
 import re
+from collections.abc import Iterable, Sequence
 from typing import (
     Any,
-    Iterable,
-    Optional,
     Self,
-    Sequence,
     SupportsIndex,
-    Union,
     overload,
 )
 
@@ -23,7 +20,7 @@ def is_ellipsis(arg) -> bool:
     return isinstance(arg, EllipsisType) or (arg == Ellipsis)
 
 
-def merge_slices(*args: Union["NDSlice", "NDBlock"]) -> Union["NDSlice", "NDBlock"]:
+def merge_slices(*args: "NDSlice | NDBlock") -> "NDSlice | NDBlock":
     """Merge multiple NDSlices or NDBlocks
 
     Creates a single NDSlice or (NDBlock if all arguemnts are NDBlocks) if they are
@@ -129,7 +126,7 @@ def split_1d(
     stop: int,
     step: int,
     max_len: int,
-    pref_splits: Optional[Sequence[int]] = None,
+    pref_splits: Sequence[int] | None = None,
 ):
     """Split a 1D slice into sub-slices that do not exceed max_len steps.
 
@@ -185,7 +182,7 @@ def split_1d(
 def split_slice(
     arr_slice: "NDSlice",
     max_size: int,
-    pref_splits: Optional[Sequence[Sequence[int]]] = None,
+    pref_splits: Sequence[Sequence[int]] | None = None,
 ) -> dict[tuple[int, ...], "NDSlice"]:
     """Split an N-dimensional slice into smaller slices that do not exceed max_size
 
@@ -315,9 +312,7 @@ def _slc_with_slc(slc1: builtins.slice, slc2: builtins.slice) -> builtins.slice:
     return builtins.slice(new_start, new_stop, new_step)
 
 
-def _is_scalar_slice(
-    slc: Union[int, builtins.slice], length: Optional[int] = None
-) -> bool:
+def _is_scalar_slice(slc: int | builtins.slice, length: int | None = None) -> bool:
     "Best effort to check if a slice selects a single element (scalar) along one dimension"
     if length is not None and isinstance(slc, builtins.slice):
         start, stop, step = slc.indices(length)
@@ -425,7 +420,7 @@ class NDSlice(tuple):
     """
 
     def __new__(
-        cls, *args: Union[int, builtins.slice, EllipsisType, Iterable, None]
+        cls, *args: int | builtins.slice | EllipsisType | Iterable | None
     ) -> Self:
         if len(args) == 1 and (isinstance(args[0], (tuple, list)) or args[0] is None):
             return cls(*(args[0] or ()))
@@ -490,7 +485,7 @@ class NDSlice(tuple):
                 raise ValueError("Can not initialize NDSlice from %s", s)
         return cls(*result)
 
-    def to_json(self, ndim: Optional[int] = None) -> list[JSON]:
+    def to_json(self, ndim: int | None = None) -> list[JSON]:
         "Convert NDSlice into a JSON-serializable representation"
         if not ndim and (Ellipsis in self) and self[-1] != Ellipsis:
             raise ValueError(
@@ -503,7 +498,7 @@ class NDSlice(tuple):
             )
         ndim = ndim or len(self)
 
-        def convert_dimension(slc: Union[int, builtins.slice]) -> Union[int, JSON]:
+        def convert_dimension(slc: int | builtins.slice) -> int | JSON:
             if isinstance(slc, builtins.slice):
                 return (
                     ({} if slc.start is None else {"start": slc.start})
@@ -656,7 +651,7 @@ class NDSlice(tuple):
             *(builtins.slice(s, s + 1, 1) if isinstance(s, int) else s for s in self)
         )
 
-    def is_scalar(self, shape: Sequence[Optional[int]]) -> bool:
+    def is_scalar(self, shape: Sequence[int | None]) -> bool:
         "Check if this NDSlice selects a single element (scalar) from an array of the given shape"
         return (len(self) == len(shape)) and all(
             _is_scalar_slice(s, length=n) for s, n in zip(self, shape)
@@ -670,7 +665,7 @@ class NDBlock(NDSlice):
     i.e. the `step` parameter along each dimension, if specified, must be 1.
     """
 
-    def __new__(cls, *args: Union[int, builtins.slice, EllipsisType]) -> Self:
+    def __new__(cls, *args: int | builtins.slice | EllipsisType) -> Self:
         inst = super().__new__(cls, *args)
 
         for s in inst:
@@ -738,7 +733,7 @@ class NDBlock(NDSlice):
 
 
 def block_for_slice(
-    chunks: Chunks, slice: Optional[Union[tuple, "NDSlice"]] = None
+    chunks: Chunks, slice: tuple | NDSlice | None = None
 ) -> tuple["NDBlock", "NDSlice"]:
     """Convert a slice on a chunked array into block indices and a slice within the block
 

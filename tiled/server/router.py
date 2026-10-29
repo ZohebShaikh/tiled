@@ -3,10 +3,11 @@ import dataclasses
 import inspect
 import os
 import warnings
-from datetime import datetime, timedelta, timezone
+from collections.abc import Awaitable, Callable, Mapping
+from datetime import UTC, datetime, timedelta
 from functools import cache, partial
 from pathlib import Path
-from typing import Awaitable, Callable, List, Literal, Mapping, Optional, TypeVar, Union
+from typing import Literal, TypeVar
 
 import anyio
 import anyio.to_thread
@@ -197,7 +198,7 @@ def _patch_route_signature(
                     default=Query(
                         None, alias=f"filter[{name}][condition][{field.name}]"
                     ),
-                    annotation=Optional[List[field_type]],
+                    annotation=list[field_type] | None,
                 )
                 parameters.append(injected_parameter)
         setattr(
@@ -215,7 +216,7 @@ def get_router(
     serialization_registry: SerializationRegistry,
     deserialization_registry: SerializationRegistry,
     validation_registry: ValidationRegistry,
-    authenticators: dict[str, Union[ExternalAuthenticator, InternalAuthenticator]],
+    authenticators: dict[str, ExternalAuthenticator | InternalAuthenticator],
 ) -> APIRouter:
     router = APIRouter()
 
@@ -231,7 +232,7 @@ def get_router(
         # etc.) can remain lazy.
         request.state.endpoint = "about"
         base_url = get_base_url(request)
-        provider_specs: List[AboutAuthenticationProvider] = []
+        provider_specs: list[AboutAuthenticationProvider] = []
         # The name of the "internal" mode used to be "password".
         # This ensures back-compat with older Python clients.
         internal_mode_name = "internal"
@@ -242,9 +243,7 @@ def get_router(
             and client_version < MINIMUM_INTERNAL_PYTHON_CLIENT_VERSION
         ):
             internal_mode_name = "password"
-        authenticator: Optional[Union[InternalAuthenticator, ExternalAuthenticator]] = (
-            None
-        )
+        authenticator: InternalAuthenticator | ExternalAuthenticator | None = None
         for provider, authenticator in authenticators.items():
             if isinstance(authenticator, InternalAuthenticator):
                 spec = AboutAuthenticationProvider(
@@ -288,7 +287,7 @@ def get_router(
                 assert False
             provider_specs.append(spec)
 
-        authentication_links: Optional[AboutAuthenticationLinks] = None
+        authentication_links: AboutAuthenticationLinks | None = None
         if provider_specs:
             # If there are *any* authenticaiton providers, these
             # endpoints will be added.
@@ -340,13 +339,13 @@ def get_router(
                     + "/api"
                 },
             ).model_dump(),
-            expires=datetime.now(timezone.utc) + timedelta(seconds=600),
+            expires=datetime.now(UTC) + timedelta(seconds=600),
         )
 
     @router.get(
         "/search/{path:path}",
         response_model=schemas.Response[
-            List[schemas.Resource[schemas.NodeAttributes, dict, dict]],
+            list[schemas.Resource[schemas.NodeAttributes, dict, dict]],
             schemas.PaginationLinks,
             dict,
         ],
@@ -355,17 +354,17 @@ def get_router(
     async def search(
         request: Request,
         path: str,
-        fields: Optional[List[schemas.EntryFields]] = Query(list(schemas.EntryFields)),
-        select_metadata: Optional[str] = Query(None),
+        fields: list[schemas.EntryFields] | None = Query(list(schemas.EntryFields)),
+        select_metadata: str | None = Query(None),
         page: PaginationParams = Depends(),
-        sort: Optional[List[tuple[str, Literal[1, -1]]]] = Depends(sorting_param),
-        max_depth: Optional[int] = Query(None, ge=0, le=DEPTH_LIMIT),
+        sort: list[tuple[str, Literal[1, -1]]] | None = Depends(sorting_param),
+        max_depth: int | None = Query(None, ge=0, le=DEPTH_LIMIT),
         omit_links: bool = Query(False),
         include_data_sources: bool = Query(False),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         settings: Settings = Depends(get_settings),
         _=Security(check_scopes, scopes=["read:metadata"]),
@@ -441,7 +440,7 @@ def get_router(
     @router.get(
         "/search-deep/{path:path}",
         response_model=schemas.Response[
-            List[schemas.Resource[schemas.NodeAttributes, dict, dict]],
+            list[schemas.Resource[schemas.NodeAttributes, dict, dict]],
             schemas.PaginationLinks,
             dict,
         ],
@@ -450,11 +449,11 @@ def get_router(
     async def search_deep(
         request: Request,
         path: str,
-        fields: Optional[List[schemas.EntryFields]] = Query(list(schemas.EntryFields)),
-        select_metadata: Optional[str] = Query(None),
+        fields: list[schemas.EntryFields] | None = Query(list(schemas.EntryFields)),
+        select_metadata: str | None = Query(None),
         page: PaginationParams = Depends(),
-        sort: Optional[List[tuple[str, Literal[1, -1]]]] = Depends(sorting_param),
-        max_depth: Optional[int] = Query(
+        sort: list[tuple[str, Literal[1, -1]]] | None = Depends(sorting_param),
+        max_depth: int | None = Query(
             None,
             ge=1,
             le=64,
@@ -462,10 +461,10 @@ def get_router(
         ),
         omit_links: bool = Query(False),
         include_data_sources: bool = Query(False),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         settings: Settings = Depends(get_settings),
         _=Security(check_scopes, scopes=["read:metadata"]),
@@ -579,12 +578,12 @@ def get_router(
         request: Request,
         structure_families: bool = False,
         specs: bool = False,
-        metadata: Optional[List[str]] = Query(default=[]),
+        metadata: list[str] | None = Query(default=[]),
         counts: bool = False,
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["read:metadata"]),
         **filters,
@@ -626,16 +625,16 @@ def get_router(
     async def metadata(
         request: Request,
         path: str,
-        fields: Optional[List[schemas.EntryFields]] = Query(list(schemas.EntryFields)),
-        select_metadata: Optional[str] = Query(None),
-        max_depth: Optional[int] = Query(None, ge=0, le=DEPTH_LIMIT),
+        fields: list[schemas.EntryFields] | None = Query(list(schemas.EntryFields)),
+        select_metadata: str | None = Query(None),
+        max_depth: int | None = Query(None, ge=0, le=DEPTH_LIMIT),
         omit_links: bool = Query(False),
         include_data_sources: bool = Query(False),
         root_path: bool = Query(False),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         settings: Settings = Depends(get_settings),
         _=Security(check_scopes, scopes=["read:metadata"]),
@@ -696,13 +695,13 @@ def get_router(
         block: NDBlock = Depends(parse_block_param),
         slice: NDSlice = Depends(parse_slice_param),
         expected_shape=Depends(expected_shape),
-        format: Optional[str] = None,
-        filename: Optional[str] = None,
+        format: str | None = None,
+        filename: str | None = None,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["read:data"]),
     ):
@@ -836,13 +835,13 @@ def get_router(
         request: Request,
         slice: NDSlice = Depends(parse_slice_param),
         expected_shape=Depends(expected_shape),
-        format: Optional[str] = None,
-        filename: Optional[str] = None,
+        format: str | None = None,
+        filename: str | None = None,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["read:data"]),
     ):
@@ -927,10 +926,10 @@ def get_router(
     async def close_stream(
         request: Request,
         path: str,
-        principal: Optional[schemas.Principal] = Depends(get_current_principal),
+        principal: schemas.Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["write:data"]),
     ):
@@ -953,20 +952,16 @@ def get_router(
         websocket: WebSocket,
         path: str,
         envelope_format: schemas.EnvelopeFormat = schemas.EnvelopeFormat.json,
-        start: Optional[int] = None,
-        principal: Optional[schemas.Principal] = Depends(
-            get_current_principal_websocket
-        ),
-        authn_access_tags: Optional[AccessTags] = Depends(
+        start: int | None = None,
+        principal: schemas.Principal | None = Depends(get_current_principal_websocket),
+        authn_access_tags: AccessTags | None = Depends(
             get_current_access_tags_websocket
         ),
         authn_scopes: Scopes = Depends(get_current_scopes_websocket),
         settings: Settings = Depends(get_settings),
         db_factory: Callable = Depends(get_database_session_factory),
-        api_key: Optional[str] = Depends(get_api_key_websocket),
-        decoded_access_token: Optional[dict] = Depends(
-            get_decoded_access_token_websocket
-        ),
+        api_key: str | None = Depends(get_api_key_websocket),
+        decoded_access_token: dict | None = Depends(get_decoded_access_token_websocket),
     ):
         root_tree = websocket.app.state.root_tree
         websocket.state.metrics = collections.defaultdict(
@@ -1042,13 +1037,13 @@ def get_router(
         request: Request,
         path: str,
         slice: NDSlice = Depends(parse_slice_param),
-        format: Optional[str] = None,
-        filename: Optional[str] = None,
+        format: str | None = None,
+        filename: str | None = None,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["read:data"]),
     ):
@@ -1113,10 +1108,10 @@ def get_router(
         request: Request,
         path: str,
         persist: bool = Query(True, description="Persist data to storage"),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["write:data"]),
     ):
@@ -1153,10 +1148,10 @@ def get_router(
         path: str,
         block: NDBlock = Depends(parse_block_param),
         persist: bool = Query(True, description="Persist data to storage"),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["write:data"]),
     ):
@@ -1199,10 +1194,10 @@ def get_router(
             False, description="Extend the array shape to fit the new data"
         ),
         persist: bool = Query(True, description="Persist data to storage"),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["write:data"]),
     ):
@@ -1259,15 +1254,15 @@ def get_router(
         path: str,
         request: Request,
         partition: int,
-        column: Optional[List[str]] = Query(None, min_length=1),
-        field: Optional[List[str]] = Query(None, min_length=1, deprecated=True),
-        format: Optional[str] = None,
-        filename: Optional[str] = None,
+        column: list[str] | None = Query(None, min_length=1),
+        field: list[str] | None = Query(None, min_length=1, deprecated=True),
+        format: str | None = None,
+        filename: str | None = None,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["read:data"]),
     ):
@@ -1324,14 +1319,14 @@ def get_router(
         path: str,
         request: Request,
         partition: int,
-        column: Optional[List[str]] = Body(None, min_length=1),
-        format: Optional[str] = None,
-        filename: Optional[str] = None,
+        column: list[str] | None = Body(None, min_length=1),
+        format: str | None = None,
+        filename: str | None = None,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["read:data"]),
     ):
@@ -1364,9 +1359,9 @@ def get_router(
         request: Request,
         partition: int,
         entry: AnyAdapter,
-        column: Optional[List[str]],
-        format: Optional[str],
-        filename: Optional[str],
+        column: list[str] | None,
+        format: str | None,
+        filename: str | None,
         settings: Settings,
     ):
         """
@@ -1421,14 +1416,14 @@ def get_router(
     async def get_table_full(
         request: Request,
         path: str,
-        column: Optional[List[str]] = Query(None, min_length=1),
-        format: Optional[str] = None,
-        filename: Optional[str] = None,
+        column: list[str] | None = Query(None, min_length=1),
+        format: str | None = None,
+        filename: str | None = None,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["read:data"]),
     ):
@@ -1464,14 +1459,14 @@ def get_router(
     async def post_table_full(
         request: Request,
         path: str,
-        column: Optional[List[str]] = Body(None, min_length=1),
-        format: Optional[str] = None,
-        filename: Optional[str] = None,
+        column: list[str] | None = Body(None, min_length=1),
+        format: str | None = None,
+        filename: str | None = None,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["read:data"]),
     ):
@@ -1502,9 +1497,9 @@ def get_router(
     async def table_full(
         request: Request,
         entry: AnyAdapter,
-        column: Optional[List[str]],
-        format: Optional[str],
-        filename: Optional[str],
+        column: list[str] | None,
+        format: str | None,
+        filename: str | None,
         settings: Settings,
     ):
         """
@@ -1554,12 +1549,12 @@ def get_router(
     async def get_container_full(
         request: Request,
         path: str,
-        principal: Optional[Principal] = Depends(get_current_principal),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        principal: Principal | None = Depends(get_current_principal),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        field: Optional[List[str]] = Query(None, min_length=1),
-        format: Optional[str] = None,
-        filename: Optional[str] = None,
+        field: list[str] | None = Query(None, min_length=1),
+        format: str | None = None,
+        filename: str | None = None,
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
         _=Security(check_scopes, scopes=["read:data"]),
@@ -1598,12 +1593,12 @@ def get_router(
     async def post_container_full(
         request: Request,
         path: str,
-        principal: Optional[Principal] = Depends(get_current_principal),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        principal: Principal | None = Depends(get_current_principal),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        field: Optional[List[str]] = Body(None, min_length=1),
-        format: Optional[str] = None,
-        filename: Optional[str] = None,
+        field: list[str] | None = Body(None, min_length=1),
+        format: str | None = None,
+        filename: str | None = None,
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
         _=Security(check_scopes, scopes=["read:data"]),
@@ -1637,12 +1632,12 @@ def get_router(
     async def container_full(
         request: Request,
         entry,
-        principal: Optional[Principal],
-        authn_access_tags: Optional[AccessTags],
+        principal: Principal | None,
+        authn_access_tags: AccessTags | None,
         authn_scopes: Scopes,
-        field: Optional[List[str]],
-        format: Optional[str],
-        filename: Optional[str],
+        field: list[str] | None,
+        format: str | None,
+        filename: str | None,
     ):
         """
         Fetch the data for the given container.
@@ -1691,12 +1686,12 @@ def get_router(
     async def node_full(
         request: Request,
         path: str,
-        principal: Optional[Principal] = Depends(get_current_principal),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        principal: Principal | None = Depends(get_current_principal),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        field: Optional[List[str]] = Query(None, min_length=1),
-        format: Optional[str] = None,
-        filename: Optional[str] = None,
+        field: list[str] | None = Query(None, min_length=1),
+        format: str | None = None,
+        filename: str | None = None,
         settings: Settings = Depends(get_settings),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
@@ -1779,14 +1774,14 @@ def get_router(
     async def get_awkward_buffers(
         request: Request,
         path: str,
-        form_key: Optional[List[str]] = Query(None, min_length=1),
-        format: Optional[str] = None,
-        filename: Optional[str] = None,
+        form_key: list[str] | None = Query(None, min_length=1),
+        format: str | None = None,
+        filename: str | None = None,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["read:data"]),
     ):
@@ -1829,14 +1824,14 @@ def get_router(
     async def post_awkward_buffers(
         request: Request,
         path: str,
-        body: List[str],
-        format: Optional[str] = None,
-        filename: Optional[str] = None,
+        body: list[str],
+        format: str | None = None,
+        filename: str | None = None,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["read:data"]),
     ):
@@ -1874,9 +1869,9 @@ def get_router(
     async def _awkward_buffers(
         request: Request,
         entry,
-        form_key: Optional[List[str]],
-        format: Optional[str],
-        filename: Optional[str],
+        form_key: list[str] | None,
+        format: str | None,
+        filename: str | None,
         settings: Settings,
     ):
         structure_family = entry.structure_family
@@ -1921,13 +1916,13 @@ def get_router(
     async def awkward_full(
         request: Request,
         path: str,
-        format: Optional[str] = None,
-        filename: Optional[str] = None,
+        format: str | None = None,
+        filename: str | None = None,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["read:data"]),
     ):
@@ -1987,8 +1982,8 @@ def get_router(
         path: str,
         body: schemas.PostMetadataRequest,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        principal: Principal | None = Depends(get_current_principal),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
@@ -2037,8 +2032,8 @@ def get_router(
         path: str,
         body: schemas.PostMetadataRequest,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        principal: Principal | None = Depends(get_current_principal),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
@@ -2073,8 +2068,8 @@ def get_router(
         body: schemas.PostMetadataRequest,
         settings: Settings,
         entry,
-        principal: Optional[Principal],
-        authn_access_tags: Optional[AccessTags],
+        principal: Principal | None,
+        authn_access_tags: AccessTags | None,
         authn_scopes: Scopes,
     ):
         metadata, structure_family, specs, access_tags = (
@@ -2171,13 +2166,13 @@ def get_router(
         path: str,
         body: schemas.PutDataSourceRequest,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
-        patch_shape: Optional[tuple[int, ...]] = Depends(patch_shape_param),
-        patch_offset: Optional[tuple[int, ...]] = Depends(patch_offset_param),
+        patch_shape: tuple[int, ...] | None = Depends(patch_shape_param),
+        patch_offset: tuple[int, ...] | None = Depends(patch_offset_param),
         _=Security(check_scopes, scopes=["write:metadata", "register"]),
     ):
         entry = await get_entry(
@@ -2224,10 +2219,10 @@ def get_router(
                 "affect any internally-managed data sources"
             ),
         ),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["delete:node", "delete:revision"]),
     ):
@@ -2258,10 +2253,10 @@ def get_router(
         request: Request,
         path: str,
         persist: bool = Query(True, description="Persist data to storage"),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["write:data"]),
     ):
@@ -2300,10 +2295,10 @@ def get_router(
         path: str,
         block: NDBlock = Depends(parse_block_param),
         persist: bool = Query(True, description="Persist data to storage"),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["write:data"]),
     ):
@@ -2344,10 +2339,10 @@ def get_router(
         shape=Depends(shape_param),
         extend: bool = False,
         persist: bool = Query(True, description="Persist data to storage"),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["write:data"]),
     ):
@@ -2402,10 +2397,10 @@ def get_router(
     async def put_node_full(
         request: Request,
         path: str,
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["write:data"]),
     ):
@@ -2440,10 +2435,10 @@ def get_router(
         partition: int,
         path: str,
         request: Request,
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["write:data"]),
     ):
@@ -2480,10 +2475,10 @@ def get_router(
         partition: int,
         path: str,
         request: Request,
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["write:data"]),
     ):
@@ -2519,10 +2514,10 @@ def get_router(
     async def put_awkward_full(
         request: Request,
         path: str,
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["write:data"]),
     ):
@@ -2564,8 +2559,8 @@ def get_router(
         path: str,
         body: schemas.PatchMetadataRequest,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        principal: Principal | None = Depends(get_current_principal),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         drop_revision: bool = False,
         root_tree=Depends(get_root_tree),
@@ -2725,8 +2720,8 @@ def get_router(
         path: str,
         body: schemas.PutMetadataRequest,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        principal: Principal | None = Depends(get_current_principal),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         drop_revision: bool = False,
         root_tree=Depends(get_root_tree),
@@ -2816,10 +2811,10 @@ def get_router(
         request: Request,
         path: str,
         page: PaginationParams = Depends(),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["read:metadata"]),
     ):
@@ -2857,10 +2852,10 @@ def get_router(
         request: Request,
         path: str,
         number: int,
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["delete:revision"]),
     ):
@@ -2891,12 +2886,12 @@ def get_router(
         request: Request,
         path: str,
         id: int,
-        relative_path: Optional[Path] = None,
+        relative_path: Path | None = None,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["read:data"]),
     ):
@@ -2988,10 +2983,10 @@ def get_router(
         path: str,
         id: int,
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["read:data"]),
     ):
@@ -3059,10 +3054,10 @@ def get_router(
             ),
         ),
         settings: Settings = Depends(get_settings),
-        principal: Optional[Principal] = Depends(get_current_principal),
+        principal: Principal | None = Depends(get_current_principal),
         root_tree=Depends(get_root_tree),
         session_state: dict = Depends(get_session_state),
-        authn_access_tags: Optional[AccessTags] = Depends(get_current_access_tags),
+        authn_access_tags: AccessTags | None = Depends(get_current_access_tags),
         authn_scopes: Scopes = Depends(get_current_scopes),
         _=Security(check_scopes, scopes=["delete:node"]),
     ):
@@ -3098,11 +3093,11 @@ def get_router(
         return json_or_msgpack(request, result)
 
     async def validate_specs(
-        specs: List[Spec],
+        specs: list[Spec],
         metadata: Mapping,
-        entry: Optional[AnyAdapter] = None,
-        structure_family: Optional[StructureFamily] = None,
-        structure: Optional[dict] = None,
+        entry: AnyAdapter | None = None,
+        structure_family: StructureFamily | None = None,
+        structure: dict | None = None,
         settings: Settings = Depends(get_settings),
     ):
         metadata_modified = False

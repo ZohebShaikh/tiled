@@ -3,7 +3,8 @@ import collections.abc
 import pathlib
 import threading
 import warnings
-from typing import Any, Dict, Mapping, Optional, Union
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import httpx2 as httpx
@@ -21,7 +22,7 @@ from .utils import (
 
 def from_uri(
     uri,
-    structure_clients: Union[str, Mapping[str, Any]] = "numpy",
+    structure_clients: str | Mapping[str, Any] = "numpy",
     *,
     cache=UNSET,
     remember_me=True,
@@ -33,8 +34,8 @@ def from_uri(
     headers=None,
     timeout=None,
     include_data_sources=False,
-    auth: Optional[httpx.Auth] = None,
-    cookies: Optional[httpx.Cookies | dict] = None,
+    auth: httpx.Auth | None = None,
+    cookies: httpx.Cookies | dict | None = None,
     max_connections: int = MAX_CONCURRENT_CONNECTIONS,
     show_progress=None,
     trust_env=True,
@@ -126,7 +127,7 @@ For non-interactive authentication, use an API key or add custom auth
 
 def from_context(
     context: Context,
-    structure_clients: Union[str, Mapping[str, Any]] = "numpy",
+    structure_clients: str | Mapping[str, Any] = "numpy",
     node_path_parts=None,
     include_data_sources=False,
     remember_me=True,
@@ -173,7 +174,7 @@ def from_context(
                 context.authenticate(remember_me=remember_me)
     # Context ensures that context.api_uri has a trailing slash.
     item_uri = f"{context.api_uri}metadata/{'/'.join(node_path_parts)}"
-    params: Dict[str, Any] = {**parse_qs(urlparse(item_uri).query)}
+    params: dict[str, Any] = {**parse_qs(urlparse(item_uri).query)}
     if include_data_sources:
         params["include_data_sources"] = include_data_sources
     content = retry_call(
@@ -291,10 +292,10 @@ def from_profile(name, structure_clients=None, **kwargs):
 
 
 def simple(
-    directory: Optional[Union[str, pathlib.Path]] = None,
-    api_key: Optional[str] = None,
+    directory: str | pathlib.Path | None = None,
+    api_key: str | None = None,
     port: int = 0,
-    readable_storage: Optional[Union[str, pathlib.Path]] = None,
+    readable_storage: str | pathlib.Path | None = None,
     quiet: bool = False,
 ):
     """

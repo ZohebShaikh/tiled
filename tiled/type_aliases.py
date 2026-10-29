@@ -1,42 +1,27 @@
-import sys
-
-from pydantic import AfterValidator
-
-if sys.version_info < (3, 10):
-    EllipsisType = type(Ellipsis)
-else:
-    from types import EllipsisType
-
+from collections.abc import Callable, Coroutine, Mapping, Sequence
+from collections.abc import Set as AbstractSet
+from types import EllipsisType
 from typing import (
-    AbstractSet,
     Annotated,
     Any,
-    Callable,
-    Coroutine,
-    FrozenSet,
-    List,
-    Mapping,
     Protocol,
-    Sequence,
-    Tuple,
     TypedDict,
-    Union,
     runtime_checkable,
 )
 
+from pydantic import AfterValidator
+
 from .utils import Sentinel, import_object
 
-JSON_ITEM = Union[
-    str, int, float, Mapping[str, "JSON_ITEM"], Sequence["JSON_ITEM"], None
-]
+JSON_ITEM = str | int | float | Mapping[str, "JSON_ITEM"] | Sequence["JSON_ITEM"] | None
 JSON = Mapping[str, JSON_ITEM]
 
-AccessTags = FrozenSet[str]
+AccessTags = frozenset[str]
 Scopes = AbstractSet[str]
 Query = Any  # for now...
 # A list of queries, or the NO_ACCESS sentinel (access_control.access_policies)
-Filters = Union[List[Query], Sentinel]
-Chunks = Tuple[Tuple[int, ...], ...]
+Filters = list[Query] | Sentinel
+Chunks = tuple[tuple[int, ...], ...]
 
 
 @runtime_checkable

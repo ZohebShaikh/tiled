@@ -6,9 +6,9 @@ import re
 import secrets
 import time
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import timedelta
-from typing import Any, Dict, List, Mapping, Optional, Tuple, Union, cast
+from typing import Any, cast
 
 import httpx2 as httpx
 import jwt
@@ -83,7 +83,7 @@ properties:
 
     async def authenticate(
         self, username: str, password: str
-    ) -> Optional[UserSessionState]:
+    ) -> UserSessionState | None:
         true_password = self._users_to_passwords.get(username)
         if not true_password:
             # Username is not valid.
@@ -117,7 +117,7 @@ properties:
 
     async def authenticate(
         self, username: str, password: str
-    ) -> Optional[UserSessionState]:
+    ) -> UserSessionState | None:
         import pamela
 
         try:
@@ -157,8 +157,8 @@ properties:
         client_secret: str,
         well_known_uri: str,
         confirmation_message: str = "",
-        redirect_on_success: Optional[str] = None,
-        redirect_on_failure: Optional[str] = None,
+        redirect_on_success: str | None = None,
+        redirect_on_failure: str | None = None,
         user_id_claim: str = "sub",
     ):
         self._audience = audience
@@ -217,11 +217,11 @@ properties:
 
     # JWKS cache state. Class-level defaults so that instances created without
     # __init__ (e.g. object.__new__ in tests) still behave.
-    _jwks: Optional[List[dict[str, Any]]] = None
+    _jwks: list[dict[str, Any]] | None = None
     _jwks_fetched_at: float = float("-inf")  # last successful fetch
     _jwks_attempted_at: float = float("-inf")  # last fetch attempt
 
-    def _fetch_keys(self) -> List[dict[str, Any]]:
+    def _fetch_keys(self) -> list[dict[str, Any]]:
         self._jwks_attempted_at = time.monotonic()
         keys = httpx.get(self.jwks_uri).raise_for_status().json().get("keys", [])
         self._jwks = keys
@@ -248,7 +248,7 @@ properties:
     def _fetch_attempted_recently(self) -> bool:
         return time.monotonic() - self._jwks_attempted_at < JWKS_MIN_REFETCH_INTERVAL
 
-    def keys(self) -> List[dict[str, Any]]:
+    def keys(self) -> list[dict[str, Any]]:
         age = time.monotonic() - self._jwks_fetched_at
         if self._jwks is None or age > JWKS_MAX_STALENESS:
             # Nothing usable to fall back on, so fetch errors propagate.
@@ -270,7 +270,7 @@ properties:
             return False
         return self._try_fetch_keys()
 
-    def _signing_key(self, kid: Optional[str]) -> jwt.PyJWK:
+    def _signing_key(self, kid: str | None) -> jwt.PyJWK:
         if kid is None:
             raise jwt.InvalidKeyError("Token header has no 'kid'")
         try:
@@ -288,7 +288,7 @@ properties:
         raise jwt.InvalidKeyError(f"No JWKS key matches kid {kid!r}")
 
     def decode_token(
-        self, id_token: str, access_token: Optional[str] = None
+        self, id_token: str, access_token: str | None = None
     ) -> dict[str, Any]:
         header = jwt.get_unverified_header(id_token)
         key = self._signing_key(header.get("kid"))
@@ -314,7 +314,7 @@ properties:
                 raise jwt.InvalidTokenError("at_hash claim does not match access_token")
         return claims
 
-    async def authenticate(self, request: Request) -> Optional[UserSessionState]:
+    async def authenticate(self, request: Request) -> UserSessionState | None:
         code = request.query_params.get("code")
         if not code:
             logger.warning(
@@ -389,11 +389,11 @@ properties:
         well_known_uri: str,
         device_flow_client_id: str,
         client_secret: str = "",
-        scopes: Optional[List[str]] = None,
-        scopes_map: Optional[Dict[str, List[str]]] = None,
+        scopes: list[str] | None = None,
+        scopes_map: dict[str, list[str]] | None = None,
         confirmation_message: str = "",
-        redirect_on_success: Optional[str] = None,
-        redirect_on_failure: Optional[str] = None,
+        redirect_on_success: str | None = None,
+        redirect_on_failure: str | None = None,
         user_id_claim: str = "sub",
     ):
         super().__init__(
@@ -419,7 +419,7 @@ properties:
         return self._oidc_bearer
 
     @property
-    def scopes(self) -> List[str]:
+    def scopes(self) -> list[str]:
         # Combine explicitly-configured scopes with those granted via
         # scopes_map (the union of its values, i.e. all Tiled scopes it grants).
         combined: set[str] = set(self._scopes or [])
@@ -428,7 +428,7 @@ properties:
         return sorted(combined)
 
     def decode_token(
-        self, id_token: str, access_token: Optional[str] = None
+        self, id_token: str, access_token: str | None = None
     ) -> dict[str, Any]:
         claims = super().decode_token(id_token, access_token)
         # Translate identity-provider scopes to Tiled scopes via scopes_map.
@@ -466,11 +466,11 @@ class EntraAuthenticator(ProxiedOIDCAuthenticator):
         client_id: str,
         well_known_uri: str,
         device_flow_client_id: str,
-        extra_scopes: Optional[List[str]] = None,
-        scopes_map: Optional[Dict[str, List[str]]] = None,
+        extra_scopes: list[str] | None = None,
+        scopes_map: dict[str, list[str]] | None = None,
         confirmation_message: str = "",
         client_secret: str = "",
-        redirect_on_success: Optional[str] = None,
+        redirect_on_success: str | None = None,
     ):
         self.extra_scopes = extra_scopes or []
         super().__init__(
@@ -488,7 +488,7 @@ class EntraAuthenticator(ProxiedOIDCAuthenticator):
             self._client_secret = Secret(client_secret)
 
     def decode_token(
-        self, id_token: str, access_token: Optional[str] = None
+        self, id_token: str, access_token: str | None = None
     ) -> dict[str, Any]:
         # Handle scope translation (scp -> Tiled scopes via scopes_map) in super()
         claims = super().decode_token(id_token, access_token)
@@ -543,7 +543,7 @@ class EntraAuthenticator(ProxiedOIDCAuthenticator):
 
         return claims
 
-    async def authenticate(self, request: Request) -> Optional[UserSessionState]:
+    async def authenticate(self, request: Request) -> UserSessionState | None:
         """Complete the Entra OIDC authorization-code flow and return a session.
 
         After a successful code exchange the Entra ``access_token`` and
@@ -628,7 +628,7 @@ async def exchange_code(
     client_id: str,
     client_secret: str,
     redirect_uri: str,
-    extra_scopes: Optional[List[str]] = None,
+    extra_scopes: list[str] | None = None,
 ) -> httpx.Response:
     """Exchange an authorization code for tokens at the IdP token endpoint.
 
@@ -699,7 +699,7 @@ class SAMLAuthenticator(ExternalAuthenticator):
 
         self.include_routers = [router]
 
-    async def authenticate(self, request: Request) -> Optional[UserSessionState]:
+    async def authenticate(self, request: Request) -> UserSessionState | None:
         if not modules_available("onelogin"):
             raise ModuleNotFoundError(
                 "This SAMLAuthenticator requires the module 'oneline' to be installed."
@@ -712,8 +712,8 @@ class SAMLAuthenticator(ExternalAuthenticator):
         errors = auth.get_errors()  # This method receives an array with the errors
         if errors:
             raise Exception(
-                "Error when processing SAML Response: %s %s"
-                % (", ".join(errors), auth.get_last_error_reason())
+                f"Error when processing SAML Response: {', '.join(errors)} "
+                f"{auth.get_last_error_reason()}"
             )
         if auth.is_authenticated():
             # Return a string that the Identity can use as id.
@@ -937,26 +937,26 @@ class LDAPAuthenticator(InternalAuthenticator):
     def __init__(
         self,
         server_address,
-        server_port: Optional[int] = None,
+        server_port: int | None = None,
         *,
         use_ssl=False,
         use_tls=True,
         connect_timeout=5,
         receive_timeout=60,
-        bind_dn_template: Optional[Union[str, List[str]]] = None,
-        allowed_groups: Optional[List[str]] = None,
+        bind_dn_template: str | list[str] | None = None,
+        allowed_groups: list[str] | None = None,
         valid_username_regex=r"^[a-z][.a-z0-9_-]*$",
         lookup_dn=False,
-        user_search_base: Optional[str] = None,
-        user_attribute: Optional[str] = None,
+        user_search_base: str | None = None,
+        user_attribute: str | None = None,
         lookup_dn_search_filter="({login_attr}={login})",
-        lookup_dn_search_user: Optional[str] = None,
-        lookup_dn_search_password: Optional[str] = None,
-        lookup_dn_user_dn_attribute: Optional[str] = None,
+        lookup_dn_search_user: str | None = None,
+        lookup_dn_search_password: str | None = None,
+        lookup_dn_user_dn_attribute: str | None = None,
         escape_userdn=False,
         search_filter="",
-        attributes: Optional[List[str]] = None,
-        auth_state_attributes: Optional[List[str]] = None,
+        attributes: list[str] | None = None,
+        auth_state_attributes: list[str] | None = None,
         use_lookup_dn_username=True,
         confirmation_message="",
     ):
@@ -1010,7 +1010,7 @@ class LDAPAuthenticator(InternalAuthenticator):
 
     async def resolve_username(
         self, username_supplied_by_user: str
-    ) -> Optional[Tuple[str, str]]:
+    ) -> tuple[str, str] | None:
         "Look up (username, DN) for the given login, or None if it cannot be resolved."
         import ldap3
         import ldap3.utils.conv
@@ -1156,7 +1156,7 @@ class LDAPAuthenticator(InternalAuthenticator):
 
     async def authenticate(
         self, username: str, password: str
-    ) -> Optional[UserSessionState]:
+    ) -> UserSessionState | None:
         import ldap3
         import ldap3.core.exceptions
         import ldap3.utils.conv
@@ -1204,7 +1204,7 @@ class LDAPAuthenticator(InternalAuthenticator):
 
         is_bound = False
         conn: Any = None
-        userdn: Optional[str] = None
+        userdn: str | None = None
         for dn in bind_dn_template:
             if not dn:
                 logger.warning("Ignoring blank 'bind_dn_template' entry!")

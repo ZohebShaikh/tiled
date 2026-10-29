@@ -8,19 +8,13 @@ import logging
 import time
 import uuid
 import warnings
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Iterable,
-    List,
-    Mapping,
-    Optional,
     Self,
-    Sequence,
-    Tuple,
-    Union,
 )
 from urllib.parse import parse_qs, urlparse
 
@@ -181,9 +175,9 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
     def new_variation(
         self,
         *,
-        structure_clients: Union[Mapping[str, Any], str, Sentinel] = UNCHANGED,
-        queries: Union[List[Any], Sentinel] = UNCHANGED,
-        sorting: Union[Sequence[Tuple[str, int]], Sentinel] = UNCHANGED,
+        structure_clients: Mapping[str, Any] | str | Sentinel = UNCHANGED,
+        queries: list[Any] | Sentinel = UNCHANGED,
+        sorting: Sequence[tuple[str, int]] | Sentinel = UNCHANGED,
         **kwargs,
     ):
         """
@@ -414,7 +408,7 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
 
     def delete_contents(
         self,
-        keys: Optional[Union[str, Iterable[str]]] = None,
+        keys: str | Iterable[str] | None = None,
         recursive: bool = False,
         external_only: bool = True,
     ) -> Self:
@@ -1333,7 +1327,7 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
         metadata=None,
         specs=None,
         access_tags=None,
-        table_name: Optional[str] = None,
+        table_name: str | None = None,
     ):
         """Initialize a table whose rows can be appended to a partition.
 
@@ -1389,7 +1383,7 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
 
     def write_table(
         self,
-        data: Union["pandas.DataFrame", dict[str, Any]],
+        data: "pandas.DataFrame | dict[str, Any]",
         *,
         key=None,
         metadata=None,
@@ -1476,7 +1470,7 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
 
     def subscribe(
         self,
-        executor: Optional[concurrent.futures.Executor] = None,
+        executor: concurrent.futures.Executor | None = None,
     ) -> "ContainerSubscription":
         """
         Subscribe to streaming updates about this container.
@@ -1503,14 +1497,14 @@ class Container(BaseClient, collections.abc.Mapping, IndexersMixin):
 
     def register(
         self,
-        *uris: Union[str, Path],
-        key: Optional[str] = None,
-        structure: Union[Structure, Mapping[str, Any], None] = None,
-        mimetype: Optional[str] = None,
-        parameters: Optional[dict[str, Any]] = None,
-        metadata: Optional[dict[str, Any]] = None,
-        specs: Optional[list[Spec]] = None,
-        access_tags: Optional[list[str]] = None,
+        *uris: str | Path,
+        key: str | None = None,
+        structure: Structure | Mapping[str, Any] | None = None,
+        mimetype: str | None = None,
+        parameters: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+        specs: list[Spec] | None = None,
+        access_tags: list[str] | None = None,
     ):
         """Register externally-managed file(s) as a single dataset in this Container.
 

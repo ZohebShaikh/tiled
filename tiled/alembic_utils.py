@@ -3,9 +3,9 @@ import concurrent.futures
 import contextlib
 import os.path
 import tempfile
-from collections.abc import Generator
+from collections.abc import Awaitable, Callable, Generator, Iterable
 from pathlib import Path
-from typing import Awaitable, Callable, Iterable, Optional, TypeVar, Union
+from typing import TypeVar
 
 from alembic import command
 from alembic.config import Config
@@ -16,9 +16,9 @@ T = TypeVar("T")
 
 
 def write_alembic_ini(
-    alembic_ini_template_path: Union[str, Path],
-    alembic_dir: Union[str, Path],
-    path: Union[str, Path],
+    alembic_ini_template_path: str | Path,
+    alembic_dir: str | Path,
+    path: str | Path,
     database_uri: str,
 ):
     """Write a complete alembic.ini from our template.
@@ -50,8 +50,8 @@ def write_alembic_ini(
 
 @contextlib.contextmanager
 def temp_alembic_ini(
-    alembic_ini_template_path: Union[str, Path],
-    alembic_dir: Union[str, Path],
+    alembic_ini_template_path: str | Path,
+    alembic_dir: str | Path,
     database_uri: str,
 ) -> Generator[str]:
     """
@@ -82,8 +82,8 @@ def temp_alembic_ini(
 
 
 def stamp_head(
-    alembic_ini_template_path: Union[str, Path],
-    alembic_dir: Union[str, Path],
+    alembic_ini_template_path: str | Path,
+    alembic_dir: str | Path,
     engine_url: str,
 ):
     """
@@ -97,8 +97,8 @@ def stamp_head(
 
 
 def upgrade(
-    alembic_ini_template_path: Union[str, Path],
-    alembic_dir: Union[str, Path],
+    alembic_ini_template_path: str | Path,
+    alembic_dir: str | Path,
     engine_url: str,
     revision: str,
 ):
@@ -113,8 +113,8 @@ def upgrade(
 
 
 def downgrade(
-    alembic_ini_template_path: Union[str, Path],
-    alembic_dir: Union[str, Path],
+    alembic_ini_template_path: str | Path,
+    alembic_dir: str | Path,
     engine_url: str,
     revision: str,
 ):
@@ -142,7 +142,7 @@ class DatabaseUpgradeNeeded(Exception):
 
 async def get_current_revision(
     engine: AsyncEngine, known_revisions: Iterable[str]
-) -> Optional[str]:
+) -> str | None:
     redacted_url = engine.url._replace(password="[redacted]")
     async with engine.connect() as conn:
         context = await conn.run_sync(migration.MigrationContext.configure)
@@ -201,8 +201,8 @@ def initialize_database_if_needed(
     initialize_database: Callable[[AsyncEngine], Awaitable[None]],
     required_revision: str,
     known_revisions: Iterable[str],
-    alembic_ini_template_path: Union[str, Path],
-    alembic_dir: Union[str, Path],
+    alembic_ini_template_path: str | Path,
+    alembic_dir: str | Path,
 ) -> bool:
     """
     Create the tables and stamp the head alembic revision, unless already done.

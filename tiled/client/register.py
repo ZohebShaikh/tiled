@@ -3,9 +3,10 @@ import dataclasses
 import logging
 import mimetypes
 import re
+from collections.abc import Callable, Mapping
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional
+from typing import Any
 
 import anyio
 import httpx2 as httpx
@@ -92,7 +93,7 @@ def resolve_mimetype(path, mimetypes_by_file_ext, mimetype_detection_hook=None):
 class Settings:
     adapters_by_mimetype: Mapping[str, Any]
     mimetypes_by_file_ext: Mapping[str, str]
-    mimetype_detection_hook: Optional[Callable]
+    mimetype_detection_hook: Callable | None
     key_from_filename: Callable
     filter: Callable
 

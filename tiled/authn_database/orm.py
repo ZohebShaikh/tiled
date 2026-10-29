@@ -1,7 +1,7 @@
 import json
 import uuid as uuid_module
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -96,7 +96,7 @@ class Timestamped:
         server_default=func.now(),
         nullable=False,
     )
-    time_updated: Mapped[Optional[datetime]] = mapped_column(
+    time_updated: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         onupdate=func.now(),
         nullable=True,
@@ -162,7 +162,7 @@ class Identity(Timestamped, Base):
     principal_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("principals.id"), nullable=False
     )
-    latest_login: Mapped[Optional[datetime]] = mapped_column(
+    latest_login: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     # In the future we may add a notion of "primary" identity.
@@ -179,8 +179,8 @@ class Role(Timestamped, Base):
     name: Mapped[str] = mapped_column(
         Unicode(255), index=True, unique=True, nullable=False
     )
-    description: Mapped[Optional[str]] = mapped_column(Unicode(1023), nullable=True)
-    scopes: Mapped[List[str]] = mapped_column(JSONList(511), nullable=False)
+    description: Mapped[str | None] = mapped_column(Unicode(1023), nullable=True)
+    scopes: Mapped[list[str]] = mapped_column(JSONList(511), nullable=False)
     principals: Mapped[list[Principal]] = relationship(
         secondary=principal_role_association_table, back_populates="roles"
     )
@@ -200,20 +200,18 @@ class APIKey(Timestamped, Base):
     hashed_secret: Mapped[bytes] = mapped_column(
         LargeBinary(32), primary_key=True, index=True, nullable=False
     )
-    expiration_time: Mapped[Optional[datetime]] = mapped_column(
+    expiration_time: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    latest_activity: Mapped[Optional[datetime]] = mapped_column(
+    latest_activity: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    note: Mapped[Optional[str]] = mapped_column(Unicode(1023), nullable=True)
+    note: Mapped[str | None] = mapped_column(Unicode(1023), nullable=True)
     principal_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("principals.id"), nullable=False
     )
-    scopes: Mapped[List[str]] = mapped_column(JSONList(511), nullable=False)
-    access_tags: Mapped[Optional[List[str]]] = mapped_column(
-        JSONList(511), nullable=True
-    )
+    scopes: Mapped[list[str]] = mapped_column(JSONList(511), nullable=False)
+    access_tags: Mapped[list[str] | None] = mapped_column(JSONList(511), nullable=True)
     # In the future we could make it possible to disable API keys
     # without deleting them from the database, for forensics and
     # record-keeping.
@@ -242,7 +240,7 @@ class Session(Timestamped, Base):
     uuid: Mapped[uuid_module.UUID] = mapped_column(
         UUID, index=True, nullable=False, default=uuid_module.uuid4
     )
-    time_last_refreshed: Mapped[Optional[datetime]] = mapped_column(
+    time_last_refreshed: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     refresh_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -276,7 +274,7 @@ class PendingSession(Base):
     )
     # SET NULL so that deleting a Session (e.g. purging an expired one) is
     # never blocked by a pending session that still references it.
-    session_id: Mapped[Optional[int]] = mapped_column(
+    session_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True
     )
     session: Mapped[Session] = relationship(lazy="joined")

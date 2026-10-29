@@ -7,9 +7,9 @@ import sys
 import types
 import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from hashlib import md5
-from typing import Any, List, Literal, Optional, Protocol, Tuple, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 import anyio
 import dateutil.tz
@@ -151,30 +151,30 @@ def pagination_links(base_url, route, path_parts, page, next_cursor, length_hint
 class KeysPaginatedAdapter(Protocol):
     "A container that pages its keys by cursor or offset."
 
-    async def cursor_for_offset(self, offset: int) -> Optional[int]: ...
+    async def cursor_for_offset(self, offset: int) -> int | None: ...
 
     async def keys_page(
-        self, cursor: Optional[int] = None, limit: Optional[int] = None
-    ) -> Tuple[List[str], Optional[int]]: ...
+        self, cursor: int | None = None, limit: int | None = None
+    ) -> tuple[list[str], int | None]: ...
 
     async def keys_range(
-        self, offset: int = 0, limit: Optional[int] = None
-    ) -> List[str]: ...
+        self, offset: int = 0, limit: int | None = None
+    ) -> list[str]: ...
 
 
 @runtime_checkable
 class ItemsPaginatedAdapter(Protocol):
     "A container that pages its items by cursor or offset."
 
-    async def cursor_for_offset(self, offset: int) -> Optional[int]: ...
+    async def cursor_for_offset(self, offset: int) -> int | None: ...
 
     async def items_page(
-        self, cursor: Optional[int] = None, limit: Optional[int] = None
-    ) -> Tuple[List[Tuple[str, Any]], Optional[int]]: ...
+        self, cursor: int | None = None, limit: int | None = None
+    ) -> tuple[list[tuple[str, Any]], int | None]: ...
 
     async def items_range(
-        self, offset: int = 0, limit: Optional[int] = None
-    ) -> List[Tuple[str, Any]]: ...
+        self, offset: int = 0, limit: int | None = None
+    ) -> list[tuple[str, Any]]: ...
 
 
 async def apply_search(tree, filters, query_registry):
@@ -257,7 +257,7 @@ async def construct_entries_response(
     omit_links,
     include_data_sources,
     filters,
-    sorting: Optional[list[tuple[str, Literal[1, -1]]]],
+    sorting: list[tuple[str, Literal[1, -1]]] | None,
     base_url,
     media_type,
     max_depth,
@@ -327,7 +327,7 @@ async def construct_entries_response(
     links = pagination_links(base_url, route, path_parts, page, next_cursor, count)
 
     # This value will not leak out. It just used to seed comparisons.
-    metadata_stale_at = datetime.now(timezone.utc) + timedelta(days=1_000_000)
+    metadata_stale_at = datetime.now(UTC) + timedelta(days=1_000_000)
     must_revalidate = getattr(tree, "must_revalidate", True)
     data = []
     for key, entry in items:
@@ -819,7 +819,7 @@ def get_websocket_envelope_formatter(
         async def stream_msgpack(
             websocket: WebSocket,
             metadata: dict,
-            payload_bytes: Optional[bytes],
+            payload_bytes: bytes | None,
         ):
             if payload_bytes is not None:
                 metadata["payload"] = payload_bytes
@@ -832,7 +832,7 @@ def get_websocket_envelope_formatter(
         async def stream_json(
             websocket: WebSocket,
             metadata: dict,
-            payload_bytes: Optional[bytes],
+            payload_bytes: bytes | None,
         ):
             if payload_bytes is not None:
                 media_type = metadata.get("mimetype") or metadata.get(

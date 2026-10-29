@@ -16,18 +16,13 @@ import sys
 import threading
 import warnings
 from collections import namedtuple
+from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
 from typing import (
     Any,
-    Awaitable,
-    Callable,
     Generic,
-    Iterator,
     NamedTuple,
-    Optional,
-    Tuple,
     TypeVar,
-    Union,
     overload,
 )
 from urllib.parse import urlparse, urlunparse
@@ -114,7 +109,7 @@ class ListView(collections.abc.Sequence[V], Generic[V]):
     @overload
     def __getitem__(self, index: slice) -> list[V]: ...
 
-    def __getitem__(self, index: Union[int, slice]) -> Union[V, list[V]]:
+    def __getitem__(self, index: int | slice) -> V | list[V]:
         return self._internal_list[index]
 
     def __iter__(self) -> collections.abc.Iterator[V]:
@@ -220,7 +215,7 @@ class OneShotCachedMap(collections.abc.Mapping[K, V], Generic[K, V]):
         # TODO should be recursive lock?
         self.__lock = threading.Lock()
         # TODO type validation?
-        self.__mapping: dict[K, Union[_OneShotCachedMapWrapper, V]] = {
+        self.__mapping: dict[K, _OneShotCachedMapWrapper | V] = {
             k: wrap(v) for k, v in dictionary.items()
         }
 
@@ -267,10 +262,10 @@ class OneShotCachedMap(collections.abc.Mapping[K, V], Generic[K, V]):
         # make sure checking 'in' does not trigger evaluation
         return k in self.__mapping
 
-    def __getstate__(self) -> dict[K, Union[_OneShotCachedMapWrapper, V]]:
+    def __getstate__(self) -> dict[K, _OneShotCachedMapWrapper | V]:
         return self.__mapping
 
-    def __setstate__(self, mapping: dict[K, Union[_OneShotCachedMapWrapper, V]]):
+    def __setstate__(self, mapping: dict[K, _OneShotCachedMapWrapper | V]):
         self.__mapping = mapping
         self.__lock = threading.Lock()
 
@@ -364,12 +359,12 @@ class CachingMap(collections.abc.Mapping[K, V], Generic[K, V]):
 
     def __getstate__(
         self,
-    ) -> Tuple[collections.abc.MutableMapping[K, Callable[[], V]], dict[K, V]]:
+    ) -> tuple[collections.abc.MutableMapping[K, Callable[[], V]], dict[K, V]]:
         return self.__mapping, self.__cache
 
     def __setstate__(
         self,
-        state: Tuple[collections.abc.MutableMapping[K, Callable[[], V]], dict[K, V]],
+        state: tuple[collections.abc.MutableMapping[K, Callable[[], V]], dict[K, V]],
     ):
         mapping, cache = state
         self.__mapping = mapping
@@ -617,7 +612,7 @@ def expand_environment_variables(config: T) -> T:
 
 
 @contextlib.contextmanager
-def prepend_to_sys_path(*paths: Union[str, Path]) -> Iterator[None]:
+def prepend_to_sys_path(*paths: str | Path) -> Iterator[None]:
     "Temporarily prepend items to sys.path."
 
     for item in reversed(paths):
@@ -891,7 +886,7 @@ def ensure_uri(uri_or_path) -> str:
     return str(uri_str)
 
 
-def sanitize_uri(uri: str) -> tuple[str, Optional[str], Optional[str]]:
+def sanitize_uri(uri: str) -> tuple[str, str | None, str | None]:
     "Remove the username and password from uri if they are present."
     parsed_uri = urlparse(uri)
     netloc = parsed_uri.netloc

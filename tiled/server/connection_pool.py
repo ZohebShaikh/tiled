@@ -1,8 +1,7 @@
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, nullcontext
 from functools import partial
-from typing import Callable, Optional, Union
 
 from fastapi import Depends
 from sqlalchemy import event
@@ -66,8 +65,8 @@ async def close_database_connection_pool(database_settings: DatabaseSettings):
 
 
 def get_database_engine(
-    settings: Union[Settings, DatabaseSettings] = Depends(get_settings),
-) -> Optional[AsyncEngine]:
+    settings: Settings | DatabaseSettings = Depends(get_settings),
+) -> AsyncEngine | None:
     database_settings = (
         settings.database_settings if isinstance(settings, Settings) else settings
     )
@@ -81,8 +80,8 @@ def get_database_engine(
 
 
 async def get_database_session_factory(
-    engine: Optional[AsyncEngine] = Depends(get_database_engine),
-) -> AsyncGenerator[Callable[[], AbstractAsyncContextManager[Optional[AsyncSession]]]]:
+    engine: AsyncEngine | None = Depends(get_database_engine),
+) -> AsyncGenerator[Callable[[], AbstractAsyncContextManager[AsyncSession | None]]]:
     # Special case for single-user mode
     if engine is None:
         yield nullcontext
@@ -92,7 +91,7 @@ async def get_database_session_factory(
 
 
 async def get_authentication_database_session_factory(
-    engine: Optional[AsyncEngine] = Depends(get_database_engine),
+    engine: AsyncEngine | None = Depends(get_database_engine),
 ) -> AsyncGenerator[Callable[[], AsyncSession]]:
     # Authentication routes are only mounted when authenticators are configured,
     # and build_app always configures a database in that case.
@@ -127,7 +126,7 @@ def _set_postgresql_plan_cache_mode(conn, record):
     conn.commit()
 
 
-def is_memory_sqlite(url: Union[URL, str]) -> bool:
+def is_memory_sqlite(url: URL | str) -> bool:
     """
     Check if a SQLAlchemy URL is a memory-backed SQLite database.
 

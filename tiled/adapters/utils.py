@@ -1,6 +1,6 @@
 import math
 from collections import defaultdict
-from typing import Any, Optional, Tuple, overload
+from typing import Any, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -104,21 +104,21 @@ class IncompatibleShapeError(ShapeMismatchError):
 
 @overload
 def force_reshape(
-    arr: NDArray[Any], desired_shape: Tuple[int, ...]
+    arr: NDArray[Any], desired_shape: tuple[int, ...]
 ) -> NDArray[Any]: ...
 @overload
 def force_reshape(
-    arr: ArrayLikeObject, desired_shape: Tuple[int, ...]
+    arr: ArrayLikeObject, desired_shape: tuple[int, ...]
 ) -> ArrayLikeObject: ...
 def force_reshape(
-    arr: ArrayLikeObject, desired_shape: Tuple[int, ...]
+    arr: ArrayLikeObject, desired_shape: tuple[int, ...]
 ) -> ArrayLikeObject:
     """Reshape a numpy or dask array to match the desired shape, if possible.
 
     Parameters
     ----------
 
-    arr : Union[np.array, dask.array.Array]
+    arr : np.ndarray | dask.array.Array
         The original ND array to be reshaped
     desired_shape : Tuple[int, ...]
         The desired shape of the resulting array
@@ -178,8 +178,8 @@ def split_chunks(total: int, chunk: int) -> tuple[int, ...]:
 
 
 def grid_shape_for_files(
-    struct_shape: Tuple[int, ...], n_files: int
-) -> Optional[Tuple[int, ...]]:
+    struct_shape: tuple[int, ...], n_files: int
+) -> tuple[int, ...] | None:
     """For multi-asset datasets, return the leading axes of `struct_shape` that
     enumerate the files, one grid cell per file, or `None` when no clean split exists.
 

@@ -1,7 +1,7 @@
 import concurrent.futures
 import functools
 import warnings
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlparse
 
 import dask
@@ -40,7 +40,7 @@ class _DaskDataFrameClient(BaseClient):
         return structure
 
     def new_variation(
-        self, *, structure: Union[Optional[Structure], Sentinel] = UNCHANGED, **kwargs
+        self, *, structure: Structure | None | Sentinel = UNCHANGED, **kwargs
     ):
         if isinstance(structure, Sentinel):
             structure = self._structure
@@ -334,7 +334,7 @@ class _DaskDataFrameClient(BaseClient):
 
     def subscribe(
         self,
-        executor: Optional[concurrent.futures.Executor] = None,
+        executor: concurrent.futures.Executor | None = None,
     ) -> "TableSubscription":
         """
         Subscribe to streaming updates about this table.

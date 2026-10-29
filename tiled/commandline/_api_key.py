@@ -1,5 +1,3 @@
-from typing import List, Optional, Union
-
 import typer
 
 from ._utils import echo_api_keys_table, get_context
@@ -9,10 +7,10 @@ api_key_app = typer.Typer(no_args_is_help=True)
 
 @api_key_app.command("create")
 def create_api_key(
-    profile: Optional[str] = typer.Option(
+    profile: str | None = typer.Option(
         None, help="If you use more than one Tiled server, use this to specify which."
     ),
-    expires_in: Optional[str] = typer.Option(
+    expires_in: str | None = typer.Option(
         None,
         help=(
             "Number of seconds until API key expires, given as integer seconds "
@@ -21,21 +19,21 @@ def create_api_key(
             "have the maximum lifetime allowed by the server. "
         ),
     ),
-    scopes: Optional[List[str]] = typer.Option(
+    scopes: list[str] | None = typer.Option(
         None,
         help=(
             "Restrict the access available to this API key by listing scopes. "
             "By default, it will inherit the scopes of its owner."
         ),
     ),
-    access_tags: Optional[List[str]] = typer.Option(
+    access_tags: list[str] | None = typer.Option(
         None,
         help=(
             "Restrict the access available to the API key by listing specific tags. "
             "By default, it will have no limits on access tags."
         ),
     ),
-    note: Optional[str] = typer.Option(None, help="Add a note to label this API key."),
+    note: str | None = typer.Option(None, help="Add a note to label this API key."),
     no_verify: bool = typer.Option(False, "--no-verify", help="Skip SSL verification."),
 ):
     context = get_context(profile)
@@ -44,7 +42,7 @@ def create_api_key(
         # Replace with None to get default scopes.
         scopes = None
     # A bare number is seconds; otherwise a duration string like '7d'.
-    lifetime: Union[int, str, None] = (
+    lifetime: int | str | None = (
         int(expires_in) if expires_in and expires_in.isdigit() else expires_in
     )
     info = context.create_api_key(
@@ -56,7 +54,7 @@ def create_api_key(
 
 @api_key_app.command("list")
 def list_api_keys(
-    profile: Optional[str] = typer.Option(
+    profile: str | None = typer.Option(
         None, help="If you use more than one Tiled server, use this to specify which."
     ),
 ):
@@ -73,7 +71,7 @@ def list_api_keys(
 
 @api_key_app.command("revoke")
 def revoke_api_key(
-    profile: Optional[str] = typer.Option(
+    profile: str | None = typer.Option(
         None, help="If you use more than one Tiled server, use this to specify which."
     ),
     first_eight: str = typer.Argument(

@@ -3,19 +3,13 @@ import functools
 import os
 from abc import abstractmethod
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    DefaultDict,
-    Dict,
-    Iterator,
     Literal,
     NamedTuple,
-    Optional,
-    Union,
 )
 from urllib.parse import quote, unquote, urlparse, urlunparse
 
@@ -208,9 +202,9 @@ class ObjectStorage(Storage):
 
     uri: str
     provider: Literal["s3", "azure", "google"]
-    bucket: Optional[str] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
+    bucket: str | None = None
+    username: str | None = None
+    password: str | None = None
     config: dict = dataclasses.field(default_factory=dict)
 
     def __post_init__(self):
@@ -234,7 +228,7 @@ class ObjectStorage(Storage):
         object.__setattr__(self, "bucket", bucket_name)
 
     @classmethod
-    def parse_blob_uri(cls, uri: str) -> tuple[str, Optional[str], str]:
+    def parse_blob_uri(cls, uri: str) -> tuple[str, str | None, str]:
         """Split a blob URI into base URI, bucket name (optionally), and the prefix.
 
         For example, given 'http://example.com/bucket_name/path/to/blob',
@@ -251,9 +245,7 @@ class ObjectStorage(Storage):
 
         return base_uri, bucket_name or None, "/".join(blob_path)
 
-    def get_obstore_location(
-        self, uri=None
-    ) -> Union["S3Store", "AzureStore", "GCSStore"]:
+    def get_obstore_location(self, uri=None) -> "S3Store | AzureStore | GCSStore":
         """Get an obstore.store instance rooted at specified URI.
 
         Parameters
@@ -407,8 +399,8 @@ class EmbeddedSQLStorage(SQLStorage):
 class RemoteSQLStorage(SQLStorage):
     "Authenticated server-based SQL database storage location"
 
-    username: Optional[str] = None
-    password: Optional[str] = None
+    username: str | None = None
+    password: str | None = None
 
     def __post_init__(self):
         # Ensure the URI is sanitized and credentials are stored separately
@@ -457,11 +449,11 @@ class RemoteSQLStorage(SQLStorage):
 # instance owns a connection pool (and a template connection), so sharing
 # instances shares pools: many catalog mounts configured with the same
 # storage use one pool rather than one each.
-_SQL_STORAGE_INSTANCES: Dict["SQLStorage", "SQLStorage"] = {}
+_SQL_STORAGE_INSTANCES: dict["SQLStorage", "SQLStorage"] = {}
 
 
 def parse_storage(
-    item: Union[Path, str, dict],
+    item: Path | str | dict,
     *,
     pool_size: int = 5,
     max_overflow: int = 10,
@@ -479,7 +471,7 @@ def parse_storage(
 
 
 def _parse_storage(
-    item: Union[Path, str, dict],
+    item: Path | str | dict,
     *,
     pool_size: int,
     max_overflow: int,
@@ -512,7 +504,7 @@ def _parse_storage(
 # purpose of obtaining credentials, which are not stored in the catalog
 # database. It is keyed by `storage_registry_key`, so for PostgreSQL lookups
 # depend only on the database name, not on how it is reached.
-_STORAGE: Dict[str, Storage] = {}
+_STORAGE: dict[str, Storage] = {}
 
 
 class AmbiguousStorage(ValueError):
@@ -563,7 +555,7 @@ def unregister_storage(storage: Storage) -> None:
 # Number of active users (e.g. started catalog Contexts) per storage location,
 # keyed by `storage_registry_key`. Since the registry admits one
 # configuration per location, this counts users of one Storage.
-_STORAGE_REFCOUNTS: DefaultDict[str, int] = defaultdict(int)
+_STORAGE_REFCOUNTS: defaultdict[str, int] = defaultdict(int)
 
 
 def acquire_storage(storage: Storage) -> Storage:
@@ -679,7 +671,7 @@ class UriStat(NamedTuple):
     """
 
     is_directory: bool
-    size: Optional[int]
+    size: int | None
 
 
 def stat_uri(data_uri: str) -> UriStat:

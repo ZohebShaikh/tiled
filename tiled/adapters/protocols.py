@@ -1,5 +1,6 @@
 from abc import abstractmethod
-from typing import AbstractSet, Any, Dict, List, Literal, Optional, Protocol, Union
+from collections.abc import Set as AbstractSet
+from typing import Any, Literal, Protocol
 
 import dask.dataframe
 import pandas
@@ -30,7 +31,7 @@ class BaseAdapter(Protocol):
         pass
 
     @property
-    def specs(self) -> List[Spec]: ...
+    def specs(self) -> list[Spec]: ...
 
 
 class ArrayAdapter(BaseAdapter, Protocol):
@@ -61,7 +62,7 @@ class AwkwardAdapter(BaseAdapter, Protocol):
         pass
 
     @abstractmethod
-    def read_buffers(self, form_keys: Optional[List[str]] = None) -> Dict[str, Any]:
+    def read_buffers(self, form_keys: list[str] | None = None) -> dict[str, Any]:
         pass
 
 
@@ -73,7 +74,7 @@ class RaggedAdapter(BaseAdapter, Protocol):
         pass
 
     @abstractmethod
-    def read(self, slice: Optional[NDSlice] = None) -> ragged.array:
+    def read(self, slice: NDSlice | None = None) -> ragged.array:
         pass
 
 
@@ -102,16 +103,16 @@ class TableAdapter(BaseAdapter, Protocol):
 
     @abstractmethod
     def read(
-        self, fields: Optional[List[str]] = None
-    ) -> Union[dask.dataframe.DataFrame, pandas.DataFrame]:
+        self, fields: list[str] | None = None
+    ) -> dask.dataframe.DataFrame | pandas.DataFrame:
         pass
 
     @abstractmethod
     def read_partition(
         self,
         partition: int,
-        fields: Optional[str] = None,
-    ) -> Union[dask.dataframe.DataFrame, pandas.DataFrame]:
+        fields: str | None = None,
+    ) -> dask.dataframe.DataFrame | pandas.DataFrame:
         pass
 
     @abstractmethod
@@ -127,12 +128,12 @@ class BytesAdapter(BaseAdapter, Protocol):
         pass
 
 
-AnyAdapter = Union[
-    ArrayAdapter,
-    AwkwardAdapter,
-    BytesAdapter,
-    ContainerAdapter[Any],
-    RaggedAdapter,
-    SparseAdapter,
-    TableAdapter,
-]
+AnyAdapter = (
+    ArrayAdapter
+    | AwkwardAdapter
+    | BytesAdapter
+    | ContainerAdapter[Any]
+    | RaggedAdapter
+    | SparseAdapter
+    | TableAdapter
+)

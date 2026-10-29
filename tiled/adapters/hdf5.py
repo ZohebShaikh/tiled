@@ -4,8 +4,9 @@ import copy
 import itertools
 import os
 import warnings
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator, List, Optional, Tuple, Union
+from typing import Any
 
 import dask
 import dask.array
@@ -41,8 +42,8 @@ MIN_CHUNK_SIZE = 1  # Minimum chunk size along the concatenation axis
 
 
 def parse_hdf5_tree(
-    tree: Union[h5py.Group, h5py.Dataset, h5py.Datatype],
-) -> Union[dict[str, Union[Any, Sentinel]], Sentinel]:
+    tree: h5py.Group | h5py.Dataset | h5py.Datatype,
+) -> dict[str, Any | Sentinel] | Sentinel:
     """Parse an HDF5 file or group into a nested dictionary structure
 
     the resulting tree structure represents any groups as nested dictionaries ans datasets as None.
@@ -57,7 +58,7 @@ def parse_hdf5_tree(
     dict
         A nested dictionary structure representing the HDF5 file or group
     """
-    res: dict[str, Union[Any, None]] = {}
+    res: dict[str, Any | None] = {}
 
     if isinstance(tree, h5py.Dataset):
         return HDF5_DATASET
@@ -72,10 +73,10 @@ def parse_hdf5_tree(
 
 def get_hdf5_attrs(
     file_uri: str,
-    dataset: Optional[str] = None,
+    dataset: str | None = None,
     swmr: bool = SWMR_DEFAULT,
     libver: str = "latest",
-    locking: Optional[Union[bool, str]] = None,
+    locking: bool | str | None = None,
 ) -> JSON:
     """Get attributes of an HDF5 dataset"""
     file_path = path_from_uri(file_uri)
@@ -103,8 +104,8 @@ def get_hdf5_attrs(
 
 @contextlib.contextmanager
 def h5open(
-    filename: Union[str, Path], dataset: Optional[str] = None, **kwargs: Any
-) -> Iterator[Union[h5py.Group, h5py.Dataset, h5py.Datatype]]:
+    filename: str | Path, dataset: str | None = None, **kwargs: Any
+) -> Iterator[h5py.Group | h5py.Dataset | h5py.Datatype]:
     """A context manager for reading datasets from HDF5 files
 
     Opens the file read-only and yields the requested dataset or group (or the file
@@ -141,7 +142,7 @@ def h5open(
 
 @contextlib.contextmanager
 def h5open_dataset(
-    filename: Union[str, Path], dataset: Optional[str] = None, **kwargs: Any
+    filename: str | Path, dataset: str | None = None, **kwargs: Any
 ) -> Iterator[h5py.Dataset]:
     "Like h5open, but the opened object must be an HDF5 dataset."
     with h5open(filename, dataset, **kwargs) as node:
@@ -159,11 +160,11 @@ class HDF5ArrayAdapter(ArrayAdapter):
 
     @staticmethod
     def lazy_load_hdf5_array(
-        *file_paths: Union[str, Path],
-        dataset: Optional[str] = None,
+        *file_paths: str | Path,
+        dataset: str | None = None,
         swmr: bool = SWMR_DEFAULT,
         libver: str = "latest",
-        locking: Optional[Union[bool, str]] = None,
+        locking: bool | str | None = None,
     ) -> dask.array.core.Array:
         """Lazily load arrays from possibly multiple HDF5 files and concatenate them along the first axis
 
@@ -185,7 +186,7 @@ class HDF5ArrayAdapter(ArrayAdapter):
 
         # Define helper functions for reading and getting specs of HDF5 arrays
         def _read_hdf5_array(
-            fpath: Union[str, Path], slice: tuple[builtins.slice, ...]
+            fpath: str | Path, slice: tuple[builtins.slice, ...]
         ) -> NDArray:
             with h5open_dataset(
                 fpath, dataset, swmr=swmr, libver=libver, locking=locking
@@ -193,8 +194,8 @@ class HDF5ArrayAdapter(ArrayAdapter):
                 return ds[slice]
 
         def _get_hdf5_specs(
-            fpath: Union[str, Path],
-        ) -> Tuple[Tuple[int, ...], Tuple[int, ...], numpy.dtype]:
+            fpath: str | Path,
+        ) -> tuple[tuple[int, ...], tuple[int, ...], numpy.dtype]:
             with h5open_dataset(
                 fpath, dataset, swmr=swmr, libver=libver, locking=locking
             ) as ds:
@@ -229,7 +230,7 @@ class HDF5ArrayAdapter(ArrayAdapter):
 
             is_vlen_string = h5py.check_string_dtype(dtype) is not None
 
-            def _read_as_bytes(fpath: Union[str, Path]) -> NDArray:
+            def _read_as_bytes(fpath: str | Path) -> NDArray:
                 with h5open_dataset(
                     fpath, dataset, swmr=swmr, libver=libver, locking=locking
                 ) as ds:
@@ -281,8 +282,8 @@ class HDF5ArrayAdapter(ArrayAdapter):
             chunks_final = (dim0_chunks, *[tuple(d) for d in rest_chunks])
 
             # Prepare slice tuples and indices for the rightmost dimensions (same for each file)
-            key_rest: Tuple[Tuple[int, ...], ...]
-            slc_rest: Tuple[Tuple[builtins.slice, ...], ...]
+            key_rest: tuple[tuple[int, ...], ...]
+            slc_rest: tuple[tuple[builtins.slice, ...], ...]
             if not rest_chunks or (max(len(dim) for dim in rest_chunks) == 1):
                 # All dimensions have only one chunk per each: use full slices
                 key_rest = (tuple(0 for _ in rest_chunks),)
@@ -339,12 +340,12 @@ class HDF5ArrayAdapter(ArrayAdapter):
         data_source: DataSource[ArrayStructure],
         node: Node,
         /,
-        dataset: Optional[str] = None,
-        slice: Optional[Union[str, NDSlice]] = None,
-        squeeze: Optional[bool] = False,
+        dataset: str | None = None,
+        slice: str | NDSlice | None = None,
+        squeeze: bool | None = False,
         swmr: bool = SWMR_DEFAULT,
         libver: str = "latest",
-        locking: Optional[Union[bool, str]] = None,
+        locking: bool | str | None = None,
     ) -> "HDF5ArrayAdapter":
         structure = data_source.structure
         assets = data_source.assets
@@ -392,12 +393,12 @@ class HDF5ArrayAdapter(ArrayAdapter):
     def from_uris(
         cls,
         *data_uris: str,
-        dataset: Optional[str] = None,
-        slice: Optional[Union[str, NDSlice]] = None,
+        dataset: str | None = None,
+        slice: str | NDSlice | None = None,
         squeeze: bool = False,
         swmr: bool = SWMR_DEFAULT,
         libver: str = "latest",
-        locking: Optional[Union[bool, str]] = None,
+        locking: bool | str | None = None,
     ) -> "HDF5ArrayAdapter":
         file_paths = [path_from_uri(uri) for uri in data_uris]
 
@@ -422,9 +423,7 @@ class HDF5ArrayAdapter(ArrayAdapter):
         return cls(array, structure, metadata=metadata)
 
 
-class HDF5Adapter(
-    ContainerAdapter[Union["HDF5Adapter", HDF5ArrayAdapter]], IndexersMixin
-):
+class HDF5Adapter(ContainerAdapter["HDF5Adapter | HDF5ArrayAdapter"], IndexersMixin):
     """Adapter for HDF5 files
 
     This map the structure of an HDF5 file onto a "Tree" of array structures.
@@ -460,12 +459,12 @@ class HDF5Adapter(
 
     def __init__(
         self,
-        tree: Union[dict[str, Any], Sentinel],
+        tree: dict[str, Any] | Sentinel,
         *data_uris: str,
-        dataset: Optional[str] = None,
-        structure: Optional[ArrayStructure] = None,
-        metadata: Optional[JSON] = None,
-        specs: Optional[List[Spec]] = None,
+        dataset: str | None = None,
+        structure: ArrayStructure | None = None,
+        metadata: JSON | None = None,
+        specs: list[Spec] | None = None,
         **kwargs: Any,
     ) -> None:
         if tree == HDF5_BROKEN_LINK:
@@ -487,15 +486,15 @@ class HDF5Adapter(
     def from_catalog(
         cls,
         # An HDF5 node may reference a dataset (array) or group (container).
-        data_source: DataSource[Union[ArrayStructure, None]],
+        data_source: DataSource[ArrayStructure | None],
         node: Node,
         /,
-        dataset: Union[str, list[str]] = "/",
+        dataset: str | list[str] = "/",
         swmr: bool = SWMR_DEFAULT,
         libver: str = "latest",
-        locking: Optional[Union[bool, str]] = None,
+        locking: bool | str | None = None,
         **kwargs: Any,  # Optional kwargs for HDF5ArrayAdapter
-    ) -> Union["HDF5Adapter", HDF5ArrayAdapter]:
+    ) -> "HDF5Adapter | HDF5ArrayAdapter":
         if not isinstance(dataset, str):
             dataset = "/".join(dataset)
 
@@ -546,12 +545,12 @@ class HDF5Adapter(
     def from_uris(
         cls,
         *data_uris: str,
-        dataset: Optional[str] = None,
+        dataset: str | None = None,
         swmr: bool = SWMR_DEFAULT,
         libver: str = "latest",
-        locking: Optional[Union[bool, str]] = None,
+        locking: bool | str | None = None,
         **kwargs: Any,  # Optional kwargs for HDF5ArrayAdapter
-    ) -> Union["HDF5Adapter", HDF5ArrayAdapter]:
+    ) -> "HDF5Adapter | HDF5ArrayAdapter":
         fpath = path_from_uri(data_uris[0])
         with h5open(fpath, dataset, swmr=swmr, libver=libver, locking=locking) as file:
             tree = parse_hdf5_tree(file)
@@ -581,7 +580,7 @@ class HDF5Adapter(
         """Iterate over the keys of the tree"""
         yield from self._tree
 
-    def __getitem__(self, key: str) -> Union["HDF5Adapter", HDF5ArrayAdapter]:
+    def __getitem__(self, key: str) -> "HDF5Adapter | HDF5ArrayAdapter":
         dataset = f"{self.dataset or ''}/{key.strip('/')}"  # Referenced to the root of the file
         node = copy.deepcopy(self._tree)
         for segment in key.strip("/").split("/"):
@@ -608,7 +607,7 @@ class HDF5Adapter(
                 *self.uris, dataset=dataset, **self._kwargs
             )
 
-    def get(self, key: str, *args: Any) -> Union["HDF5Adapter", HDF5ArrayAdapter]:
+    def get(self, key: str, *args: Any) -> "HDF5Adapter | HDF5ArrayAdapter":
         """Overwrite to always raise KeyErrors for broken links and missing items"""
         return self[key]
 
@@ -627,7 +626,7 @@ class HDF5Adapter(
     def search(self, query: Any) -> None:
         raise NotImplementedError
 
-    def read(self, fields: Optional[str] = None) -> "HDF5Adapter":
+    def read(self, fields: str | None = None) -> "HDF5Adapter":
         if fields is not None:
             raise NotImplementedError
         return self
@@ -635,16 +634,16 @@ class HDF5Adapter(
     # The following two methods are used by keys(), values(), items().
 
     def _keys_slice(
-        self, start: int, stop: int, direction: int, page_size: Optional[int] = None
-    ) -> List[Any]:
+        self, start: int, stop: int, direction: int, page_size: int | None = None
+    ) -> list[Any]:
         keys = list(self._tree.keys())
         if direction < 0:
             keys = list(reversed(keys))
         return keys[start:stop]
 
     def _items_slice(
-        self, start: int, stop: int, direction: int, page_size: Optional[int] = None
-    ) -> List[Tuple[Any, Any]]:
+        self, start: int, stop: int, direction: int, page_size: int | None = None
+    ) -> list[tuple[Any, Any]]:
         """
 
         Parameters

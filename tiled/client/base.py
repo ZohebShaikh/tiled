@@ -4,7 +4,7 @@ from collections.abc import Mapping, MutableMapping
 from copy import copy, deepcopy
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import json_merge_patch
@@ -36,7 +36,7 @@ from .utils import (
 
 # TODO: Duplicated from  tiled.type_aliases to prevent importing numpy
 # After #1407 replace AnyAdapter with the BaseClass and remove this redefinition
-JSON_ITEM = Union[str, int, float, bool, Dict[str, "JSON_ITEM"], List["JSON_ITEM"]]
+JSON_ITEM = str | int | float | bool | dict[str, "JSON_ITEM"] | list["JSON_ITEM"]
 
 
 class MetadataRevisions:
@@ -168,7 +168,7 @@ class BaseClient:
 
         super().__init__()
 
-    def structure(self) -> Optional[Structure]:
+    def structure(self) -> Structure | None:
         """
         Return a dataclass describing the structure of the data.
         """
@@ -225,7 +225,7 @@ class BaseClient:
         return self._context
 
     def refresh(self):
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             **parse_qs(urlparse(self.uri).query),
         }
         if self._include_data_sources:
@@ -339,9 +339,9 @@ class BaseClient:
     def new_variation(
         self,
         *,
-        structure_clients: Union[Mapping[str, Any], Sentinel] = UNCHANGED,
-        include_data_sources: Union[bool, Sentinel] = UNCHANGED,
-        structure: Union[Optional[Structure], Sentinel] = UNCHANGED,
+        structure_clients: Mapping[str, Any] | Sentinel = UNCHANGED,
+        include_data_sources: bool | Sentinel = UNCHANGED,
+        structure: Structure | None | Sentinel = UNCHANGED,
         **kwargs,
     ):
         """

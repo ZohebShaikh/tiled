@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 import xarray
 
@@ -11,7 +11,7 @@ from ..utils import path_from_uri
 from .xarray import DatasetAdapter
 
 
-def read_netcdf(filepath: Union[str, Path]) -> DatasetAdapter:
+def read_netcdf(filepath: str | Path) -> DatasetAdapter:
     """
 
     Parameters

@@ -7,10 +7,10 @@ compact terms read back out, so prefixes resolve consistently.
 
 from __future__ import annotations
 
-from typing import Any, Optional, overload
+from typing import Any, overload
 
 
-def split_curie(term: str) -> Optional[tuple[str, str]]:
+def split_curie(term: str) -> tuple[str, str] | None:
     if term.startswith("@"):
         return None
     if ":" not in term or "://" in term:

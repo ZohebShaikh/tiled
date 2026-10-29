@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy
 import sparse
@@ -25,11 +25,11 @@ class COOAdapter(SparseAdapter):
         cls,
         coords: NDArray[Any],
         data: NDArray[Any],
-        shape: Tuple[int, ...],
-        dims: Optional[Tuple[str, ...]] = None,
+        shape: tuple[int, ...],
+        dims: tuple[str, ...] | None = None,
         *,
-        metadata: Optional[JSON] = None,
-        specs: Optional[List[Spec]] = None,
+        metadata: JSON | None = None,
+        specs: list[Spec] | None = None,
     ) -> "COOAdapter":
         """
         Simplest constructor. Single chunk from coords, data arrays.
@@ -67,9 +67,9 @@ class COOAdapter(SparseAdapter):
         cls,
         coo: sparse.COO,
         *,
-        dims: Optional[Tuple[str, ...]] = None,
-        metadata: Optional[JSON] = None,
-        specs: Optional[List[Spec]] = None,
+        dims: tuple[str, ...] | None = None,
+        metadata: JSON | None = None,
+        specs: list[Spec] | None = None,
     ) -> "COOAdapter":
         """
         Construct from sparse.COO object.
@@ -96,13 +96,13 @@ class COOAdapter(SparseAdapter):
     @classmethod
     def from_global_ref(
         cls,
-        blocks: Dict[Tuple[int, ...], Tuple[NDArray[Any], Any]],
-        shape: Tuple[int, ...],
+        blocks: dict[tuple[int, ...], tuple[NDArray[Any], Any]],
+        shape: tuple[int, ...],
         chunks: Chunks,
         *,
-        dims: Optional[Tuple[str, ...]] = None,
-        metadata: Optional[JSON] = None,
-        specs: Optional[List[Spec]] = None,
+        dims: tuple[str, ...] | None = None,
+        metadata: JSON | None = None,
+        specs: list[Spec] | None = None,
     ) -> "COOAdapter":
         """
         Construct from blocks with coords given in global reference frame.
@@ -149,11 +149,11 @@ class COOAdapter(SparseAdapter):
 
     def __init__(
         self,
-        blocks: Dict[Tuple[int, ...], Tuple[NDArray[Any], Any]],
+        blocks: dict[tuple[int, ...], tuple[NDArray[Any], Any]],
         structure: COOStructure,
         *,
-        metadata: Optional[JSON] = None,
-        specs: Optional[List[Spec]] = None,
+        metadata: JSON | None = None,
+        specs: list[Spec] | None = None,
     ) -> None:
         """
         Construct from blocks with coords given in block-local reference frame.

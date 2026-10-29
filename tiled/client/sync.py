@@ -1,6 +1,7 @@
 import itertools
 import warnings
-from typing import Any, Iterable, Mapping, Tuple, Union
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 import httpx2 as httpx
 
@@ -11,7 +12,7 @@ from .utils import ClientError
 
 
 def copy(
-    source: Union[BaseClient, Mapping[str, Any], Iterable[Tuple[str, Any]]],
+    source: BaseClient | Mapping[str, Any] | Iterable[tuple[str, Any]],
     dest: BaseClient,
     on_conflict: str = "error",
 ):
