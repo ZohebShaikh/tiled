@@ -111,11 +111,20 @@ from ..storage import (
     register_storage,
     release_storage,
 )
+from ..structures.array import ArrayStructure
+from ..structures.awkward import AwkwardStructure
+from ..structures.bytes import BytesStructure
 from ..structures.core import Spec, StructureFamily
+from ..structures.ragged import RaggedStructure
+from ..structures.root import Structure
+from ..structures.sparse import SparseStructure
+from ..structures.table import TableStructure
 from ..utils import (
     UNCHANGED,
     Conflicts,
     OneShotCachedMap,
+    ReadOnlyChainMap,
+    Sentinel,
     UnsupportedQueryType,
     ensure_awaitable,
     ensure_specified_sql_driver,
@@ -134,7 +143,7 @@ from .explain import ExplainAsyncSession
 from .utils import compute_structure_id
 
 if TYPE_CHECKING:
-    from ..adapters.protocols import AnyAdapter
+    from ..adapters.protocols import ArrayAdapter
     from ..ndslice import NDBlock
 
 logger = logging.getLogger(__name__)
@@ -269,7 +278,10 @@ class Context:
         storage_max_overflow=10,
         webhook_secret_keys: list[str] | None = None,
     ):
-        self.engine = get_database_engine(database_settings)
+        engine = get_database_engine(database_settings)
+        if engine is None:
+            raise ValueError("The catalog requires a database URI.")
+        self.engine = engine
         self.database_settings = database_settings
         self.writable_storage = {}
         self.readable_storage = {}
@@ -311,7 +323,7 @@ class Context:
             if isinstance(value, str):
                 adapters_by_mimetype[key] = import_object(value)
         # User-provided adapters take precedence over defaults.
-        merged_adapters_by_mimetype = collections.ChainMap(
+        merged_adapters_by_mimetype = ReadOnlyChainMap(
             adapters_by_mimetype, DEFAULT_ADAPTERS_BY_MIMETYPE
         )
         self.adapters_by_mimetype = merged_adapters_by_mimetype
@@ -580,11 +592,15 @@ class CatalogNodeAdapter:
             return None  # no match
         return Asset.from_orm(asset)
 
-    def structure(self):
+    def structure(self) -> Structure | None:
         data_sources = self.node.data_sources or []
         if data_sources:
             assert len(data_sources) == 1  # more not yet implemented
-            return DataSource.from_orm(data_sources[0], include_assets=False).structure
+            structure = DataSource.from_orm(
+                data_sources[0], include_assets=False
+            ).structure
+            assert structure is None or isinstance(structure, Structure)
+            return structure
         return None
 
     def apply_conditions(self, statement):
@@ -781,7 +797,7 @@ class CatalogNodeAdapter:
         *,
         block: "NDBlock | None" = None,
         slice: Any = ...,
-    ) -> "AnyAdapter | None":
+    ) -> "ArrayAdapter | None":
         """Build an I/O adapter that resolves only the assets a read will touch.
 
         Returns `None` (so the caller falls back to :meth:`get_adapter`) unless
@@ -830,6 +846,8 @@ class CatalogNodeAdapter:
         # file count) to compute the file geometry.
         data_source = DataSource.from_orm(ds, include_assets=False)
         structure = data_source.structure
+        if structure is None:
+            return None
 
         # A block read's file selection depends ONLY on the block: read_block
         # loads the whole block along the stacking axis and applies any
@@ -922,25 +940,25 @@ class CatalogNodeAdapter:
     def new_variation(
         self,
         *args,
-        sorting=UNCHANGED,
+        sorting: list[tuple[str, Literal[1, -1]]] | None | Sentinel = UNCHANGED,
         conditions=UNCHANGED,
         queries=UNCHANGED,
-        deep=UNCHANGED,
-        max_depth=UNCHANGED,
+        deep: bool | Sentinel = UNCHANGED,
+        max_depth: int | None | Sentinel = UNCHANGED,
         access_filters=UNCHANGED,
         **kwargs,
     ):
-        if access_filters is UNCHANGED:
+        if isinstance(access_filters, Sentinel):
             access_filters = self.access_filters
-        if sorting is UNCHANGED:
+        if isinstance(sorting, Sentinel):
             sorting = self.sorting
-        if conditions is UNCHANGED:
+        if isinstance(conditions, Sentinel):
             conditions = self.conditions
-        if queries is UNCHANGED:
+        if isinstance(queries, Sentinel):
             queries = self.queries
-        if deep is UNCHANGED:
+        if isinstance(deep, Sentinel):
             deep = self.deep
-        if max_depth is UNCHANGED:
+        if isinstance(max_depth, Sentinel):
             max_depth = self.max_depth
         return type(self)(
             self.context,
@@ -1064,7 +1082,7 @@ class CatalogNodeAdapter:
 
     async def get_distinct(self, metadata, structure_families, specs, counts):
         if self.node.data_sources:
-            return (await self.get_adapter()).get_disinct(
+            return (await self.get_adapter()).get_distinct(
                 metadata, structure_families, specs, counts
             )
         data = {}
@@ -1326,13 +1344,16 @@ class CatalogNodeAdapter:
                     .values(size=asset.size)
                 )
         else:
-            statement = self.insert(orm.Asset).values(
-                data_uri=asset.data_uri,
-                is_directory=asset.is_directory,
-                size=asset.size,
+            statement = (
+                self.insert(orm.Asset)
+                .values(
+                    data_uri=asset.data_uri,
+                    is_directory=asset.is_directory,
+                    size=asset.size,
+                )
+                .returning(orm.Asset.id)
             )
-            result = await db.execute(statement)
-            (asset_id,) = result.inserted_primary_key
+            asset_id = (await db.execute(statement)).scalar_one()
 
         return asset_id
 
@@ -1393,6 +1414,7 @@ class CatalogNodeAdapter:
         if (
             self.context.streaming_cache
             and data_source.structure_family == StructureFamily.array
+            and structure is not None
         ):
             sequence = await self.context.streaming_cache.incr_seq(self.node.id)
             metadata = {
@@ -1822,6 +1844,8 @@ class CatalogNodeAdapter:
             values["metadata_"] = metadata
         if specs is not None:
             values["specs"] = specs
+        current = None
+        next_revision_number = None
         async with self.context.session() as db:
             if not drop_revision:
                 current = (
@@ -1881,6 +1905,7 @@ class CatalogNodeAdapter:
                     "metadata": metadata,
                 }
                 if not drop_revision:
+                    assert next_revision_number is not None
                     metadata["revision_number"] = next_revision_number
                 await self.context.streaming_cache.set(
                     self.node.parent, sequence, metadata
@@ -1893,7 +1918,7 @@ class CatalogNodeAdapter:
                 # drop_revision=False) or to the cached node attribute.
                 if metadata is not None:
                     effective_metadata = metadata
-                elif not drop_revision:
+                elif current is not None:
                     effective_metadata = current.metadata_ or {}
                 else:
                     effective_metadata = self.node.metadata_ or {}
@@ -1901,7 +1926,8 @@ class CatalogNodeAdapter:
                 effective_specs = (
                     specs
                     if specs is not None
-                    else (current.specs if not drop_revision else self.node.specs) or []
+                    else (current.specs if current is not None else self.node.specs)
+                    or []
                 )
                 ev = ContainerChildMetadataUpdatedEvent(
                     timestamp=datetime.now(tz=UTC),
@@ -1930,6 +1956,11 @@ class CatalogNodeAdapter:
                 # directly on this node are included in the ancestor walk.
                 node_id=self.node.id,
             )
+
+    def make_ws_schema(self):
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support streaming over websockets."
+        )
 
     def make_ws_handler(self, websocket, formatter, uri):
         schema = self.make_ws_schema()
@@ -2225,6 +2256,18 @@ class CatalogArrayAdapter(CatalogNodeAdapter):
                     return True
         return False if found else None
 
+    # Subclasses (CatalogRaggedAdapter, CatalogSparseAdapter) reuse this
+    # class's read/write implementations but represent different structure
+    # families, so this return type covers what any of them can produce.
+    def structure(
+        self,
+    ) -> ArrayStructure | RaggedStructure | SparseStructure | None:
+        structure = super().structure()
+        assert structure is None or isinstance(
+            structure, (ArrayStructure, RaggedStructure, SparseStructure)
+        )
+        return structure
+
     async def read(self, *args, **kwargs):
         if not self.node.data_sources:
             fields = kwargs.get("fields")
@@ -2279,10 +2322,13 @@ class CatalogArrayAdapter(CatalogNodeAdapter):
         )
 
     def make_ws_schema(self):
+        structure = self.structure()
+        assert structure is not None
+        assert structure.data_type is not None
         return {
             "type": "array-schema",
             "version": 1,
-            "data_type": dataclasses.asdict(self.structure().data_type),
+            "data_type": dataclasses.asdict(structure.data_type),
         }
 
     async def write(self, media_type, deserializer, entry, body, persist=True):
@@ -2362,6 +2408,11 @@ class CatalogArrayAdapter(CatalogNodeAdapter):
 
 
 class CatalogAwkwardAdapter(CatalogNodeAdapter):
+    def structure(self) -> AwkwardStructure | None:
+        structure = super().structure()
+        assert structure is None or isinstance(structure, AwkwardStructure)
+        return structure
+
     async def read(self, *args, **kwargs):
         return await ensure_awaitable((await self.get_adapter()).read, *args, **kwargs)
 
@@ -2379,15 +2430,25 @@ class CatalogBytesAdapter(CatalogNodeAdapter):
     # structure-family endpoint, so this adapter inherits CatalogNodeAdapter
     # unchanged. The class exists to anchor the family in STRUCTURES so
     # registration produces an instance of the right type.
-    pass
+    def structure(self) -> BytesStructure | None:
+        structure = super().structure()
+        assert structure is None or isinstance(structure, BytesStructure)
+        return structure
 
 
 class CatalogRaggedAdapter(CatalogArrayAdapter):
+    def structure(self) -> RaggedStructure | None:
+        structure = super().structure()
+        assert structure is None or isinstance(structure, RaggedStructure)
+        return structure
+
     def make_ws_schema(self):
+        structure = self.structure()
+        assert structure is not None
         return {
             "type": "ragged-schema",
             "version": 1,
-            "data_type": dataclasses.asdict(self.structure().data_type),
+            "data_type": dataclasses.asdict(structure.data_type),
         }
 
     async def _stream(self, media_type, entry, body, shape, block=None, offset=None):
@@ -2467,15 +2528,25 @@ class CatalogRaggedAdapter(CatalogArrayAdapter):
 
 
 class CatalogSparseAdapter(CatalogArrayAdapter):
-    pass
+    def structure(self) -> SparseStructure | None:
+        structure = super().structure()
+        assert structure is None or isinstance(structure, SparseStructure)
+        return structure
 
 
 class CatalogTableAdapter(CatalogNodeAdapter):
+    def structure(self) -> TableStructure | None:
+        structure = super().structure()
+        assert structure is None or isinstance(structure, TableStructure)
+        return structure
+
     def make_ws_schema(self):
+        structure = self.structure()
+        assert structure is not None
         return {
             "type": "table-schema",
             "version": 1,
-            "arrow_schema": self.structure().arrow_schema,
+            "arrow_schema": structure.arrow_schema,
         }
 
     async def _stream(self, media_type, entry, body, partition, append):
@@ -2541,16 +2612,17 @@ def delete_physical_asset(
         if (table_name is not None) and (dataset_id is not None):
             storage = cast(SQLStorage, get_storage(data_uri))
             with closing(storage.connect()) as conn:
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     cursor.execute(
                         f'DELETE FROM "{table_name}" WHERE _dataset_id = {dataset_id:d};',
                     )
                 conn.commit()
 
                 # If the table is empty, we can drop it
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     cursor.execute(f'SELECT COUNT(*) FROM "{table_name}";')
-                    if cursor.fetchone()[0] == 0:
+                    row = cursor.fetchone()
+                    if row is not None and row[0] == 0:
                         cursor.execute(f'DROP TABLE IF EXISTS "{table_name}";')
                 conn.commit()
 
@@ -2813,7 +2885,7 @@ def in_or_not_in_postgresql(query, tree, method):
                     for item in query.value
                 )
             )
-    elif method == "not_in":
+    else:  # method == "not_in"
         if len(query.value) == 0:
             condition = true()
         else:
