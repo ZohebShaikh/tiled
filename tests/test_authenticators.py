@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from fastapi.security import SecurityScopes
 from jwt import ExpiredSignatureError
 from jwt.algorithms import RSAAlgorithm
+from pydantic import ValidationError
 from respx import MockRouter
 from starlette.requests import Request
 from starlette.status import HTTP_401_UNAUTHORIZED
@@ -21,6 +22,7 @@ from tiled.authenticators import (
     JWKS_CACHE_TTL,
     JWKS_MAX_STALENESS,
     JWKS_MIN_REFETCH_INTERVAL,
+    DictionaryAuthenticator,
     EntraAuthenticator,
     LDAPAuthenticator,
     OIDCAuthenticator,
@@ -59,8 +61,8 @@ def test_LDAPAuthenticator_01(use_tls, use_ssl, ldap_server_address, ldap_server
     if not TILED_TEST_LDAP:
         pytest.skip("Run an LDAP container and set TILED_TEST_LDAP to run")
     authenticator = LDAPAuthenticator(
-        ldap_server_address,
-        ldap_server_port,
+        server_address=ldap_server_address,
+        server_port=ldap_server_port,
         bind_dn_template="cn={username},ou=users,dc=example,dc=org",
         use_tls=use_tls,
         use_ssl=use_ssl,
@@ -103,7 +105,9 @@ def test_oidc_authenticator_caching(
     json_web_keyset: list[dict[str, Any]]
 ):
 
-    authenticator = OIDCAuthenticator("tiled", "tiled", "secret", well_known_uri=well_known_url)
+    authenticator = OIDCAuthenticator(
+        audience="tiled", client_id="tiled", client_secret="secret", well_known_uri=well_known_url
+    )
     assert authenticator.client_id == "tiled"
     assert authenticator.authorization_endpoint == well_known_response["authorization_endpoint"]
     assert authenticator.id_token_signing_alg_values_supported == well_known_response[
@@ -146,7 +150,9 @@ def test_oidc_decoding(
     keys: tuple[rsa.RSAPrivateKey, rsa.RSAPublicKey]
 ):
     private_key, _ = keys
-    authenticator = OIDCAuthenticator("tiled", "tiled", "secret", well_known_uri=well_known_url)
+    authenticator = OIDCAuthenticator(
+        audience="tiled", client_id="tiled", client_secret="secret", well_known_uri=well_known_url
+    )
     access_token = token(issued, expired)
     encrypted_access_token = encrypted_token(access_token, private_key)
 
@@ -175,7 +181,9 @@ def test_oidc_decoding_checks_at_hash(
     error: type[Exception] | None,
 ):
     """Accept an id_token only with the access_token its at_hash was computed from."""
-    authenticator = OIDCAuthenticator("tiled", "tiled", "secret", well_known_uri=well_known_url)
+    authenticator = OIDCAuthenticator(
+        audience="tiled", client_id="tiled", client_secret="secret", well_known_uri=well_known_url
+    )
     # at_hash of "access-token" under RS256: left half of its SHA-256, base64url.
     claims = {**token(issued=True, expired=False), "at_hash": "Pxa-1wifRlPl7yG_0oJNfw"}
     id_token = encrypted_token(claims, keys[0])
@@ -198,7 +206,7 @@ def test_proxied_decoding_unknown_kid_is_unauthorized(
     provider) must be rejected with 401, not escape as a 500, so that clients
     fall back to refreshing."""
     authenticator = ProxiedOIDCAuthenticator(
-        "tiled", "tiled", well_known_url, device_flow_client_id="tiled-cli"
+        audience="tiled", client_id="tiled", well_known_uri=well_known_url, device_flow_client_id="tiled-cli"
     )
     # Expired too, to cover the stale-cached-token case: expiry cannot be
     # checked when the signing key is unknown.
@@ -223,7 +231,7 @@ def test_proxied_decoding_known_kid(
     """Tokens signed with a known key still decode, and expiry still surfaces
     as ExpiredSignatureError (which callers turn into a 'refresh' 401)."""
     authenticator = ProxiedOIDCAuthenticator(
-        "tiled", "tiled", well_known_url, device_flow_client_id="tiled-cli"
+        audience="tiled", client_id="tiled", well_known_uri=well_known_url, device_flow_client_id="tiled-cli"
     )
     claims = token(issued=True, expired=expired)
     signed = encrypted_token(claims, keys[0])
@@ -260,7 +268,9 @@ def test_oidc_unknown_kid_refetches_jwks(
 ):
     """The provider started signing with a key published after our last
     fetch: refetch the JWKS rather than wait out the cache TTL."""
-    authenticator = OIDCAuthenticator("tiled", "tiled", "secret", well_known_uri=well_known_url)
+    authenticator = OIDCAuthenticator(
+        audience="tiled", client_id="tiled", client_secret="secret", well_known_uri=well_known_url
+    )
     assert authenticator.keys() == json_web_keyset
     assert jwks_route.call_count == 1
     age_jwks_cache(authenticator, JWKS_MIN_REFETCH_INTERVAL + 1)
@@ -290,7 +300,9 @@ def test_oidc_unknown_kid_refetch_is_rate_limited(
     keys: tuple[rsa.RSAPrivateKey, rsa.RSAPublicKey],
     caplog,
 ):
-    authenticator = OIDCAuthenticator("tiled", "tiled", "secret", well_known_uri=well_known_url)
+    authenticator = OIDCAuthenticator(
+        audience="tiled", client_id="tiled", client_secret="secret", well_known_uri=well_known_url
+    )
     bogus = jwt.encode(
         token(issued=True, expired=False), keys[0], algorithm="RS256", headers={"kid": "bogus"}
     )
@@ -318,7 +330,9 @@ def test_oidc_unknown_kid_refetch_failure_keeps_cached_keys(
 ):
     """A failed refetch must not turn an unknown kid into a server error, nor
     discard the keys we already have."""
-    authenticator = OIDCAuthenticator("tiled", "tiled", "secret", well_known_uri=well_known_url)
+    authenticator = OIDCAuthenticator(
+        audience="tiled", client_id="tiled", client_secret="secret", well_known_uri=well_known_url
+    )
     authenticator.keys()
     age_jwks_cache(authenticator, JWKS_MIN_REFETCH_INTERVAL + 1)
     jwks_route.mock(return_value=httpx.Response(httpx.codes.SERVICE_UNAVAILABLE))
@@ -340,7 +354,9 @@ def test_oidc_jwks_cache_expires(
     jwks_route,
     keys: tuple[rsa.RSAPrivateKey, rsa.RSAPublicKey],
 ):
-    authenticator = OIDCAuthenticator("tiled", "tiled", "secret", well_known_uri=well_known_url)
+    authenticator = OIDCAuthenticator(
+        audience="tiled", client_id="tiled", client_secret="secret", well_known_uri=well_known_url
+    )
     claims = token(issued=True, expired=False)
     signed = encrypted_token(claims, keys[0])
     authenticator.decode_token(signed)
@@ -359,7 +375,9 @@ def test_oidc_jwks_ttl_refresh_failure_falls_back_to_cached_keys(
 ):
     """If the hourly refresh fails, tokens signed with already-known keys keep
     validating, and the failing fetch is not retried on every request."""
-    authenticator = OIDCAuthenticator("tiled", "tiled", "secret", well_known_uri=well_known_url)
+    authenticator = OIDCAuthenticator(
+        audience="tiled", client_id="tiled", client_secret="secret", well_known_uri=well_known_url
+    )
     claims = token(issued=True, expired=False)
     signed = encrypted_token(claims, keys[0])
     authenticator.decode_token(signed)
@@ -392,7 +410,9 @@ def test_oidc_jwks_too_stale_does_not_fall_back(
     keys: tuple[rsa.RSAPrivateKey, rsa.RSAPublicKey],
 ):
     "Keys older than JWKS_MAX_STALENESS are not trusted if refreshing fails."
-    authenticator = OIDCAuthenticator("tiled", "tiled", "secret", well_known_uri=well_known_url)
+    authenticator = OIDCAuthenticator(
+        audience="tiled", client_id="tiled", client_secret="secret", well_known_uri=well_known_url
+    )
     signed = encrypted_token(token(issued=True, expired=False), keys[0])
     authenticator.decode_token(signed)
 
@@ -416,8 +436,7 @@ def test_entra_decoding_ignores_unmapped_scopes(caplog):
     try:
         caplog.set_level(logging.WARNING)
 
-        authenticator = object.__new__(EntraAuthenticator)
-        authenticator._scopes_map = {"known.scope": ["read:metadata"]}
+        authenticator = EntraAuthenticator.model_construct(scopes_map={"known.scope": ["read:metadata"]})
         claims = authenticator.decode_token("id-token", "access-token")
 
         assert claims["entra_sub"] == "opaque-sub"
@@ -471,7 +490,8 @@ def encrypted_token(token: dict[str, str], private_key: rsa.RSAPrivateKey) -> st
 
 @pytest.mark.asyncio
 async def test_proxied_oidc_token_retrieval(well_known_url: str, mock_oidc_server: MockRouter):
-    authenticator = ProxiedOIDCAuthenticator("tiled", "tiled", well_known_url, device_flow_client_id="tiled-cli")
+    authenticator = ProxiedOIDCAuthenticator(
+        audience="tiled", client_id="tiled", well_known_uri=well_known_url, device_flow_client_id="tiled-cli")
     test_request = httpx.Request("GET", "http://example.com", headers={
         "Authorization": "bearer FOO"
     })
@@ -599,7 +619,8 @@ async def test_OIDCAuthenticator_token_exchange_failure(
 
 async def test_ProxiedOIDCAuthenticator_requires_scopes(mock_oidc_server, well_known_url):
 
-    authenticator = ProxiedOIDCAuthenticator("tiled", "tiled", well_known_url, device_flow_client_id="tiled-cli",
+    authenticator = ProxiedOIDCAuthenticator(
+        audience="tiled", client_id="tiled", well_known_uri=well_known_url, device_flow_client_id="tiled-cli",
                                              scopes=["read:data"])
 
     test_request = Request(scope={"type": "http", "scheme": "http", "headers": [(b"host", b"testserver")]}, )
@@ -620,7 +641,7 @@ async def test_ProxiedOIDCAuthenticator_scoped_api_key_passes(mock_oidc_server, 
     # authenticator's scopes (the union of every scope in scopes_map), which
     # broke scoped API keys under a ProxiedOIDC/Entra authenticator.
     authenticator = ProxiedOIDCAuthenticator(
-        "tiled", "tiled", well_known_url, device_flow_client_id="tiled-cli",
+        audience="tiled", client_id="tiled", well_known_uri=well_known_url, device_flow_client_id="tiled-cli",
         scopes_map={"access_as_user": [
             "read:metadata", "read:data", "create:node", "write:metadata",
             "write:data", "delete:revision", "delete:node", "create:apikeys",
@@ -651,7 +672,7 @@ async def test_ProxiedOIDCAuthenticator_scoped_api_key_passes(mock_oidc_server, 
 def test_ProxiedOIDCAuthenticator_scopes_explicit(mock_oidc_server, well_known_url):
     # With no scopes_map, explicit scopes are returned as-is.
     authenticator = ProxiedOIDCAuthenticator(
-        "tiled", "tiled", well_known_url, device_flow_client_id="tiled-cli",
+        audience="tiled", client_id="tiled", well_known_uri=well_known_url, device_flow_client_id="tiled-cli",
         scopes=["read:data"],
     )
     assert authenticator.scopes == ["read:data"]
@@ -661,7 +682,7 @@ def test_ProxiedOIDCAuthenticator_scopes_union(mock_oidc_server, well_known_url)
     # When both are provided, scopes is the (sorted) union of explicit scopes
     # and the Tiled scopes granted via scopes_map.
     authenticator = ProxiedOIDCAuthenticator(
-        "tiled", "tiled", well_known_url, device_flow_client_id="tiled-cli",
+        audience="tiled", client_id="tiled", well_known_uri=well_known_url, device_flow_client_id="tiled-cli",
         scopes=["read:data"],
         scopes_map={"provider.write": ["write:data"]},
     )
@@ -671,7 +692,7 @@ def test_ProxiedOIDCAuthenticator_scopes_union(mock_oidc_server, well_known_url)
 def test_ProxiedOIDCAuthenticator_scopes_derived_from_scopes_map(mock_oidc_server, well_known_url):
     # With no explicit scopes, they are derived from the values of scopes_map.
     authenticator = ProxiedOIDCAuthenticator(
-        "tiled", "tiled", well_known_url, device_flow_client_id="tiled-cli",
+        audience="tiled", client_id="tiled", well_known_uri=well_known_url, device_flow_client_id="tiled-cli",
         scopes_map={"provider.read": ["read:metadata", "read:data"]},
     )
     assert set(authenticator.scopes) == {"read:metadata", "read:data"}
@@ -680,7 +701,7 @@ def test_ProxiedOIDCAuthenticator_scopes_derived_from_scopes_map(mock_oidc_serve
 def test_ProxiedOIDCAuthenticator_scopes_default_empty(mock_oidc_server, well_known_url):
     # With neither scopes nor scopes_map, scopes is an empty list.
     authenticator = ProxiedOIDCAuthenticator(
-        "tiled", "tiled", well_known_url, device_flow_client_id="tiled-cli",
+        audience="tiled", client_id="tiled", well_known_uri=well_known_url, device_flow_client_id="tiled-cli",
     )
     assert authenticator.scopes == []
 
@@ -689,7 +710,7 @@ def test_EntraAuthenticator_scopes_derived_from_scopes_map(mock_oidc_server, wel
     # EntraAuthenticator no longer defines its own scopes property; it inherits
     # the scopes_map-derived behavior from ProxiedOIDCAuthenticator.
     authenticator = EntraAuthenticator(
-        "tiled", "tiled", well_known_url, device_flow_client_id="tiled-cli",
+        audience="tiled", client_id="tiled", well_known_uri=well_known_url, device_flow_client_id="tiled-cli",
         scopes_map={"provider.read": ["read:metadata"], "provider.write": ["write:data"]},
     )
     assert set(authenticator.scopes) == {"read:metadata", "write:data"}
@@ -703,8 +724,7 @@ def test_ProxiedOIDCAuthenticator_decode_token_maps_scopes():
     original = OIDCAuthenticator.decode_token
     OIDCAuthenticator.decode_token = mock_decode_token
     try:
-        authenticator = object.__new__(ProxiedOIDCAuthenticator)
-        authenticator._scopes_map = {"provider.read": ["read:metadata"]}
+        authenticator = ProxiedOIDCAuthenticator.model_construct(scopes_map={"provider.read": ["read:metadata"]})
         claims = authenticator.decode_token("id-token", "access-token")
         # Mapped scope is translated; unmapped provider scope is dropped.
         assert claims["scope"] == "read:metadata"
@@ -720,8 +740,7 @@ def test_ProxiedOIDCAuthenticator_decode_token_no_map_leaves_scopes():
     original = OIDCAuthenticator.decode_token
     OIDCAuthenticator.decode_token = mock_decode_token
     try:
-        authenticator = object.__new__(ProxiedOIDCAuthenticator)
-        authenticator._scopes_map = {}
+        authenticator = ProxiedOIDCAuthenticator.model_construct(scopes_map={})
         claims = authenticator.decode_token("id-token", "access-token")
         assert "scope" not in claims
         assert claims["scp"] == ["read:data"]
@@ -739,8 +758,7 @@ def test_ProxiedOIDCAuthenticator_decode_token_all_unmapped_empty_scope():
     original = OIDCAuthenticator.decode_token
     OIDCAuthenticator.decode_token = mock_decode_token
     try:
-        authenticator = object.__new__(ProxiedOIDCAuthenticator)
-        authenticator._scopes_map = {"provider.read": ["read:metadata"]}
+        authenticator = ProxiedOIDCAuthenticator.model_construct(scopes_map={"provider.read": ["read:metadata"]})
         claims = authenticator.decode_token("id-token", "access-token")
         assert claims["scope"] == ""
     finally:
@@ -755,3 +773,34 @@ def test_extract_scopes_empty_scope_is_empty_set():
     ) == {"read:data", "write:data"}
     # "scope" (even empty) takes precedence over "scp" and is not overridden.
     assert _extract_scopes({"scope": "", "scp": "read:data"}, None) == set()
+
+
+def test_ldap_server_port_defaults_by_ssl():
+    assert LDAPAuthenticator(server_address="ldap.example.com").server_port == 389
+    assert LDAPAuthenticator(server_address="ldap.example.com", use_ssl=True).server_port == 636
+    assert LDAPAuthenticator(server_address="ldap.example.com", server_port=1389).server_port == 1389
+
+
+def test_ldap_one_or_many_server_addresses():
+    single = LDAPAuthenticator(server_address="ldap.example.com")
+    assert single.server_address_list == ["ldap.example.com"]
+    many = LDAPAuthenticator(server_address=["a.example.com", "b.example.com"])
+    assert many.server_address_list == ["a.example.com", "b.example.com"]
+    with pytest.raises(ValidationError):
+        LDAPAuthenticator(server_address=[])
+
+
+def test_ldap_bind_dn_template_one_or_many():
+    auth = LDAPAuthenticator(server_address="ldap.example.com", bind_dn_template="cn={username}")
+    assert auth.bind_dn_template == ["cn={username}"]
+
+
+def test_unknown_authenticator_argument_is_rejected():
+    # Typos in a server configuration file fail loudly instead of being ignored.
+    with pytest.raises(ValidationError, match="users_to_password"):
+        DictionaryAuthenticator(users_to_password={"alice": "secret"})
+
+
+def test_secrets_not_in_repr():
+    auth = DictionaryAuthenticator(users_to_passwords={"alice": "secret"})
+    assert "secret" not in repr(auth)

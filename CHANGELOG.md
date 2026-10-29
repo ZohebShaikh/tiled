@@ -7,6 +7,13 @@ Write the date in place of the "Unreleased" in the case a new version is release
 
 ### Changed
 
+- Authenticators are now pydantic models. Their configuration is declared as
+  typed fields and validated when the server starts, and unknown arguments are
+  rejected instead of ignored. Authenticators must be constructed with keyword
+  arguments (e.g. `LDAPAuthenticator(server_address=..., server_port=...)`),
+  and custom subclasses of `InternalAuthenticator` / `ExternalAuthenticator`
+  declare fields instead of overriding `__init__`. The `configuration_schema`
+  attributes were removed.
 - Tiled now manages its connection pools to tabular storage more correctly.
   Also, it is now not allowed to use two storage databases with the same
   database on different hosts.

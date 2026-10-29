@@ -8,13 +8,20 @@ import time
 import uuid
 from collections.abc import Iterable, Mapping
 from datetime import timedelta
-from typing import Any, cast
+from typing import Annotated, Any, ClassVar, cast
 
 import httpx2 as httpx
 import jwt
 from fastapi import APIRouter, Request
 from fastapi.security import OAuth2, OAuth2AuthorizationCodeBearer
-from pydantic import Secret
+from pydantic import (
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    Secret,
+    field_validator,
+    model_validator,
+)
 from starlette.responses import RedirectResponse
 
 from .server.protocols import (
@@ -46,9 +53,6 @@ class DummyAuthenticator(InternalAuthenticator):
 
     """
 
-    def __init__(self, confirmation_message: str = ""):
-        self.confirmation_message = confirmation_message
-
     async def authenticate(self, username: str, password: str) -> UserSessionState:
         return UserSessionState(username, {})
 
@@ -60,31 +64,14 @@ class DictionaryAuthenticator(InternalAuthenticator):
     Check passwords from a dictionary of usernames mapped to passwords.
     """
 
-    configuration_schema = """
-$schema": http://json-schema.org/draft-07/schema#
-type: object
-additionalProperties: false
-properties:
-  users_to_password:
-    type: object
-    description: |
-      Mapping usernames to password. Environment variable expansion should be
-      used to avoid placing passwords directly in configuration.
-  confirmation_message:
-    type: string
-    description: May be displayed by client after successful login.
-"""
-
-    def __init__(
-        self, users_to_passwords: Mapping[str, str], confirmation_message: str = ""
-    ):
-        self._users_to_passwords = users_to_passwords
-        self.confirmation_message = confirmation_message
+    users_to_passwords: Mapping[str, str] = Field(repr=False)
+    """Mapping usernames to password. Environment variable expansion should be
+    used to avoid placing passwords directly in configuration."""
 
     async def authenticate(
         self, username: str, password: str
     ) -> UserSessionState | None:
-        true_password = self._users_to_passwords.get(username)
+        true_password = self.users_to_passwords.get(username)
         if not true_password:
             # Username is not valid.
             return
@@ -93,26 +80,14 @@ properties:
 
 
 class PAMAuthenticator(InternalAuthenticator):
-    configuration_schema = """
-$schema": http://json-schema.org/draft-07/schema#
-type: object
-additionalProperties: false
-properties:
-  service:
-    type: string
-    description: PAM service. Default is 'login'.
-  confirmation_message:
-    type: string
-    description: May be displayed by client after successful login.
-"""
+    service: str = "login"
+    "PAM service."
 
-    def __init__(self, service: str = "login", confirmation_message: str = ""):
+    def model_post_init(self, context: Any) -> None:
         if not modules_available("pamela"):
             raise ModuleNotFoundError(
                 "This PAMAuthenticator requires the module 'pamela' to be installed."
             )
-        self.service = service
-        self.confirmation_message = confirmation_message
         # TODO Try to open a PAM session.
 
     async def authenticate(
@@ -129,56 +104,19 @@ properties:
 
 
 class OIDCAuthenticator(ExternalAuthenticator):
-    configuration_schema = """
-$schema": http://json-schema.org/draft-07/schema#
-type: object
-additionalProperties: false
-properties:
-  audience:
-    type: string
-  client_id:
-    type: string
-  client_secret:
-    type: string
-  well_known_uri:
-    type: string
-  confirmation_message:
-    type: string
-  redirect_on_success:
-    type: string
-  redirect_on_failure:
-    type: string
-"""
-
-    def __init__(
-        self,
-        audience: str,
-        client_id: str,
-        client_secret: str,
-        well_known_uri: str,
-        confirmation_message: str = "",
-        redirect_on_success: str | None = None,
-        redirect_on_failure: str | None = None,
-        user_id_claim: str = "sub",
-    ):
-        self._audience = audience
-        self._client_id = client_id
-        self._client_secret = Secret(client_secret)
-        self._well_known_url = well_known_uri
-        self.confirmation_message = confirmation_message
-        self.redirect_on_success = redirect_on_success
-        self.redirect_on_failure = redirect_on_failure
-        self.user_id_claim = user_id_claim
+    audience: str
+    client_id: str
+    client_secret: Secret[str]
+    well_known_uri: str
+    redirect_on_success: str | None = None
+    redirect_on_failure: str | None = None
+    user_id_claim: str = "sub"
 
     @functools.cached_property
     def _config_from_oidc_url(self) -> dict[str, Any]:
-        response: httpx.Response = httpx.get(self._well_known_url)
+        response: httpx.Response = httpx.get(self.well_known_uri)
         response.raise_for_status()
         return response.json()
-
-    @functools.cached_property
-    def client_id(self) -> str:
-        return self._client_id
 
     @functools.cached_property
     def id_token_signing_alg_values_supported(self) -> list[str]:
@@ -215,8 +153,7 @@ properties:
     def end_session_endpoint(self) -> str:
         return cast(str, self._config_from_oidc_url.get("end_session_endpoint"))
 
-    # JWKS cache state. Class-level defaults so that instances created without
-    # __init__ (e.g. object.__new__ in tests) still behave.
+    # JWKS cache state (pydantic private attributes, not configuration).
     _jwks: list[dict[str, Any]] | None = None
     _jwks_fetched_at: float = float("-inf")  # last successful fetch
     _jwks_attempted_at: float = float("-inf")  # last fetch attempt
@@ -294,7 +231,7 @@ properties:
             id_token,
             key=key,
             algorithms=self.id_token_signing_alg_values_supported,
-            audience=self._audience,
+            audience=self.audience,
             issuer=self.issuer,
             # Clocks on the provider and this server drift apart, so accept
             # a fresh token whose iat is slightly in the future.
@@ -326,8 +263,8 @@ properties:
         response = await exchange_code(
             self.token_endpoint,
             code,
-            self._client_id,
-            self._client_secret.get_secret_value(),
+            self.client_id,
+            self.client_secret.get_secret_value(),
             redirect_uri,
         )
         response_body = response.json()
@@ -349,79 +286,32 @@ properties:
 
 
 class ProxiedOIDCAuthenticator(OIDCAuthenticator):
-    configuration_schema = """
-$schema": http://json-schema.org/draft-07/schema#
-type: object
-additionalProperties: false
-properties:
-  audience:
-    type: string
-  client_id:
-    type: string
-  well_known_uri:
-    type: string
-  scopes:
-    type: array
-    items:
-      type: string
-    description: |
-      Optional list of OAuth2 scopes to request. If provided, authorization
-      should be enforced by an external policy agent (for example ExternalPolicyDecisionPoint)
-      rather than by this authenticator.
-  scopes_map:
-    type: object
-    description: |
-      Optional mapping from identity-provider scopes to the list of Tiled
-      scopes they grant. The effective `scopes` are the union of any
-      explicitly-configured `scopes` and all Tiled scopes from this mapping.
-  device_flow_client_id:
-    type: string
-  confirmation_message:
-    type: string
-"""
+    model_config = ConfigDict(populate_by_name=True)
 
-    def __init__(
-        self,
-        audience: str,
-        client_id: str,
-        well_known_uri: str,
-        device_flow_client_id: str,
-        client_secret: str = "",
-        scopes: list[str] | None = None,
-        scopes_map: dict[str, list[str]] | None = None,
-        confirmation_message: str = "",
-        redirect_on_success: str | None = None,
-        redirect_on_failure: str | None = None,
-        user_id_claim: str = "sub",
-    ):
-        super().__init__(
-            audience=audience,
-            client_id=client_id,
-            client_secret=client_secret,
-            well_known_uri=well_known_uri,
-            confirmation_message=confirmation_message,
-            redirect_on_success=redirect_on_success,
-            redirect_on_failure=redirect_on_failure,
-            user_id_claim=user_id_claim,
-        )
-        self._scopes_map = scopes_map if scopes_map is not None else {}
-        self._scopes = scopes
-        self.device_flow_client_id = device_flow_client_id
-        self._oidc_bearer = OAuth2AuthorizationCodeBearer(
+    device_flow_client_id: str
+    client_secret: Secret[str] = Secret("")
+    configured_scopes: list[str] | None = Field(default=None, alias="scopes")
+    """Optional list of OAuth2 scopes to request. If provided, authorization
+    should be enforced by an external policy agent (for example
+    ExternalPolicyDecisionPoint) rather than by this authenticator."""
+    scopes_map: dict[str, list[str]] = {}
+    """Optional mapping from identity-provider scopes to the list of Tiled
+    scopes they grant. The effective `scopes` are the union of any
+    explicitly-configured `scopes` and all Tiled scopes from this mapping."""
+
+    @functools.cached_property
+    def oauth2_schema(self) -> OAuth2:
+        return OAuth2AuthorizationCodeBearer(
             authorizationUrl=str(self.authorization_endpoint),
             tokenUrl=self.token_endpoint,
         )
 
     @property
-    def oauth2_schema(self) -> OAuth2:
-        return self._oidc_bearer
-
-    @property
     def scopes(self) -> list[str]:
         # Combine explicitly-configured scopes with those granted via
         # scopes_map (the union of its values, i.e. all Tiled scopes it grants).
-        combined: set[str] = set(self._scopes or [])
-        for tiled_scopes in self._scopes_map.values():
+        combined: set[str] = set(self.configured_scopes or [])
+        for tiled_scopes in self.scopes_map.values():
             combined.update(tiled_scopes)
         return sorted(combined)
 
@@ -435,21 +325,21 @@ properties:
         # assume all mapped scopes were granted (the provider would not have
         # issued the tokens if the user lacked the requested scopes).  When no
         # scopes_map is configured, the token's native scopes are left untouched.
-        if not self._scopes_map:
+        if not self.scopes_map:
             return claims
         scp_raw = claims.get("scp", "")
         tiled_scope_set: set[str] = set()
         if scp_raw:
             provider_scopes = scp_raw.split() if isinstance(scp_raw, str) else scp_raw
             for scope in provider_scopes:
-                mapped_scopes = self._scopes_map.get(scope)
+                mapped_scopes = self.scopes_map.get(scope)
                 if mapped_scopes is None:
                     logger.warning("Unmapped scope in 'scp': %s", scope)
                     continue
                 tiled_scope_set.update(mapped_scopes)
         else:
             # No scp claim — grant all Tiled scopes from the map.
-            for mapped_scopes in self._scopes_map.values():
+            for mapped_scopes in self.scopes_map.values():
                 tiled_scope_set.update(mapped_scopes)
         # Always set "scope" (even if empty) so downstream scope extraction does
         # not fall back to the raw, unmapped provider "scp" claim.
@@ -458,32 +348,9 @@ properties:
 
 
 class EntraAuthenticator(ProxiedOIDCAuthenticator):
-    def __init__(
-        self,
-        audience: str,
-        client_id: str,
-        well_known_uri: str,
-        device_flow_client_id: str,
-        extra_scopes: list[str] | None = None,
-        scopes_map: dict[str, list[str]] | None = None,
-        confirmation_message: str = "",
-        client_secret: str = "",
-        redirect_on_success: str | None = None,
-    ):
-        self.extra_scopes = extra_scopes or []
-        super().__init__(
-            audience,
-            client_id,
-            well_known_uri,
-            device_flow_client_id,
-            scopes=None,  # not used by Entra; enforcement is via scopes_map
-            scopes_map=scopes_map,
-            confirmation_message=confirmation_message,
-            redirect_on_success=redirect_on_success,
-        )
-        # Override the empty secret from ProxiedOIDCAuthenticator if provided.
-        if client_secret:
-            self._client_secret = Secret(client_secret)
+    extra_scopes: list[str] = []
+    # Not used by Entra; enforcement is via scopes_map.
+    configured_scopes: None = Field(default=None, alias="scopes")
 
     def decode_token(
         self, id_token: str, access_token: str | None = None
@@ -572,8 +439,8 @@ class EntraAuthenticator(ProxiedOIDCAuthenticator):
         response = await exchange_code(
             self.token_endpoint,
             code,
-            self._client_id,
-            self._client_secret.get_secret_value(),
+            self.client_id,
+            self.client_secret.get_secret_value(),
             redirect_uri,
             extra_scopes=self.extra_scopes,
         )
@@ -665,19 +532,14 @@ async def exchange_code(
 
 
 class SAMLAuthenticator(ExternalAuthenticator):
-    def __init__(
-        self,
-        saml_settings,  # See EXAMPLE_SAML_SETTINGS below.
-        attribute_name: str,  # which SAML attribute to use as 'id' for Identity
-        confirmation_message: str = "",
-    ):
-        self.saml_settings = saml_settings
-        self.attribute_name = attribute_name
-        self.confirmation_message = confirmation_message
-        self.authorization_endpoint = "/login"
+    saml_settings: dict[str, Any] = Field(repr=False)
+    "See EXAMPLE_SAML_SETTINGS below."
+    attribute_name: str
+    "Which SAML attribute to use as 'id' for Identity."
 
-        router = APIRouter()
+    authorization_endpoint: ClassVar[str] = "/login"
 
+    def model_post_init(self, context: Any) -> None:
         if not modules_available("onelogin"):
             # The PyPI package name is 'python3-saml'
             # but it imports as 'onelogin'.
@@ -686,7 +548,11 @@ class SAMLAuthenticator(ExternalAuthenticator):
                 "This SAMLAuthenticator requires 'python3-saml' to be installed."
             )
 
+    @functools.cached_property
+    def include_routers(self) -> list[APIRouter]:
         from onelogin.saml2.auth import OneLogin_Saml2_Auth
+
+        router = APIRouter()
 
         @router.get("/login")
         async def saml_login(request: Request) -> RedirectResponse:
@@ -695,7 +561,7 @@ class SAMLAuthenticator(ExternalAuthenticator):
             callback_url = auth.login()
             return RedirectResponse(url=callback_url)
 
-        self.include_routers = [router]
+        return [router]
 
     async def authenticate(self, request: Request) -> UserSessionState | None:
         if not modules_available("onelogin"):
@@ -747,6 +613,15 @@ async def prepare_saml_from_fastapi_request(request: Request) -> Mapping[str, st
         RelayState = form_data["RelayState"]
         rv["post_data"]["RelayState"] = RelayState
     return rv
+
+
+def _one_or_many(value: Any) -> list[Any]:
+    "Accept a single value or an iterable of values (or None, meaning none)."
+    if value is None:
+        return []
+    if isinstance(value, str) or not isinstance(value, Iterable):
+        return [value]
+    return list(value)
 
 
 class LDAPAuthenticator(InternalAuthenticator):
@@ -904,7 +779,10 @@ class LDAPAuthenticator(InternalAuthenticator):
 
         from bluesky_httpserver.authenticators import LDAPAuthenticator
         authenticator = LDAPAuthenticator(
-            "localhost", 1389, bind_dn_template="cn={username},ou=users,dc=example,dc=org", use_tls=False
+            server_address="localhost",
+            server_port=1389,
+            bind_dn_template="cn={username},ou=users,dc=example,dc=org",
+            use_tls=False,
         )
         await authenticator.authenticate("user01", "password1")
         await authenticator.authenticate("user02", "password2")
@@ -932,79 +810,47 @@ class LDAPAuthenticator(InternalAuthenticator):
                 id: user02
     """
 
-    def __init__(
-        self,
-        server_address,
-        server_port=None,
-        *,
-        use_ssl=False,
-        use_tls=True,
-        connect_timeout=5,
-        receive_timeout=60,
-        bind_dn_template=None,
-        allowed_groups=None,
-        valid_username_regex=r"^[a-z][.a-z0-9_-]*$",
-        lookup_dn=False,
-        user_search_base=None,
-        user_attribute=None,
-        lookup_dn_search_filter="({login_attr}={login})",
-        lookup_dn_search_user=None,
-        lookup_dn_search_password=None,
-        lookup_dn_user_dn_attribute=None,
-        escape_userdn=False,
-        search_filter="",
-        attributes=None,
-        auth_state_attributes=None,
-        use_lookup_dn_username=True,
-        confirmation_message="",
-    ):
-        self.use_ssl = use_ssl
-        self.use_tls = use_tls
-        self.connect_timeout = connect_timeout
-        self.receive_timeout = receive_timeout
-        self.bind_dn_template = bind_dn_template
-        self.allowed_groups = allowed_groups
-        self.valid_username_regex = valid_username_regex
-        self.lookup_dn = lookup_dn
-        self.user_search_base = user_search_base
-        self.user_attribute = user_attribute
-        self.lookup_dn_search_filter = lookup_dn_search_filter
-        self.lookup_dn_search_user = lookup_dn_search_user
-        self.lookup_dn_search_password = lookup_dn_search_password
-        self.lookup_dn_user_dn_attribute = lookup_dn_user_dn_attribute
-        self.escape_userdn = escape_userdn
-        self.search_filter = search_filter
-        self.attributes = attributes if attributes else []
-        self.auth_state_attributes = (
-            auth_state_attributes if auth_state_attributes else []
-        )
-        self.use_lookup_dn_username = use_lookup_dn_username
+    model_config = ConfigDict(populate_by_name=True)
 
-        if isinstance(server_address, str):
-            server_address_list = [server_address]
-        elif isinstance(server_address, Iterable):
-            server_address_list = list(server_address)
-        else:
-            raise TypeError(
-                f"Unsupported type of `server_address` (list): server_address={server_address} "
-                f"type(server_address)={type(server_address)}"
-            )
-        if not server_address_list:
+    server_address_list: Annotated[
+        list[str], BeforeValidator(_one_or_many), Field(alias="server_address")
+    ]
+    server_port: int | None = None
+    use_ssl: bool = False
+    use_tls: bool = True
+    connect_timeout: float = 5
+    receive_timeout: float = 60
+    bind_dn_template: Annotated[list[str], BeforeValidator(_one_or_many)] = []
+    allowed_groups: list[str] | None = None
+    valid_username_regex: str = r"^[a-z][.a-z0-9_-]*$"
+    lookup_dn: bool = False
+    user_search_base: str | None = None
+    user_attribute: str | None = None
+    lookup_dn_search_filter: str = "({login_attr}={login})"
+    lookup_dn_search_user: str | None = None
+    lookup_dn_search_password: str | None = Field(default=None, repr=False)
+    lookup_dn_user_dn_attribute: str | None = None
+    escape_userdn: bool = False
+    search_filter: str = ""
+    attributes: Annotated[list[str], BeforeValidator(_one_or_many)] = []
+    auth_state_attributes: Annotated[list[str], BeforeValidator(_one_or_many)] = []
+    use_lookup_dn_username: bool = True
+
+    @field_validator("server_address_list")
+    @classmethod
+    def _require_a_server(cls, value: list[str]) -> list[str]:
+        if not value:
             raise ValueError(
                 "No servers are specified: 'server_address' is an empty list"
             )
+        return value
 
-        self.server_address_list = server_address_list
-        self.server_port = (
-            server_port if server_port is not None else self._server_port_default()
-        )
-        self.confirmation_message = confirmation_message
-
-    def _server_port_default(self):
-        if self.use_ssl:
-            return 636  # default SSL port for LDAP
-        else:
-            return 389  # default plaintext port for LDAP
+    @model_validator(mode="after")
+    def _default_server_port(self) -> "LDAPAuthenticator":
+        if self.server_port is None:
+            # Default SSL port for LDAP, else the default plaintext port.
+            self.server_port = 636 if self.use_ssl else 389
+        return self
 
     async def resolve_username(self, username_supplied_by_user):
         import ldap3
@@ -1165,10 +1011,7 @@ class LDAPAuthenticator(InternalAuthenticator):
             logger.warning("username:%s Login denied for blank password", username)
             return None
 
-        # bind_dn_template should be of type List[str]
         bind_dn_template = self.bind_dn_template
-        if isinstance(bind_dn_template, str):
-            bind_dn_template = [bind_dn_template]
 
         # sanity check
         if not self.lookup_dn and not bind_dn_template:
