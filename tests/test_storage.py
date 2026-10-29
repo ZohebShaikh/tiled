@@ -191,10 +191,7 @@ def test_credentials_retained_for_connecting(registered_storage):
 
 
 class _FakeCursor:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
+    def close(self):
         pass
 
     def execute(self, statement):

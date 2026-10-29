@@ -92,7 +92,7 @@ class ExcelAdapter(MapAdapter[TableAdapter]):
         data_source: DataSource[None],
         node: Node,
         /,
-        **kwargs: Any | None,
+        **kwargs: Any,
     ) -> "ExcelAdapter":
         data_uri = data_source.assets[0].data_uri
         return cls.from_uris(

@@ -3,7 +3,7 @@ from collections.abc import Set
 from typing import Any, Generic, TypeVar
 
 from tiled.storage import Storage
-from tiled.structures.core import Spec, StructureFamily
+from tiled.structures.core import Spec
 from tiled.structures.root import Structure
 from tiled.type_aliases import JSON
 
@@ -11,8 +11,6 @@ S = TypeVar("S", bound=Structure)
 
 
 class Adapter(ABC, Generic[S]):
-    structure_family: StructureFamily
-
     def __init__(
         self,
         structure: S,

@@ -1,8 +1,6 @@
 from typing import Any
 
-import dask.dataframe
 import numpy
-import pandas
 import sparse
 from numpy._typing import NDArray
 
@@ -26,7 +24,7 @@ class COOAdapter(SparseAdapter):
     def from_arrays(
         cls,
         coords: NDArray[Any],
-        data: dask.dataframe.DataFrame | pandas.DataFrame,
+        data: NDArray[Any],
         shape: tuple[int, ...],
         dims: tuple[str, ...] | None = None,
         *,
@@ -122,6 +120,10 @@ class COOAdapter(SparseAdapter):
         -------
 
         """
+        if not blocks:
+            raise ValueError("At least one block is required.")
+        # Every block shares the same dtypes; take them from the first.
+        coords, data = next(iter(blocks.values()))
         local_blocks = {}
         for block, (coords, data) in blocks.items():
             offsets = []

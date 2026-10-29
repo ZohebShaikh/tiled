@@ -120,6 +120,14 @@ def is_unique_violation(exc: adbc_driver_manager.Error) -> bool:
     return isinstance(exc, adbc_driver_manager.IntegrityError)
 
 
+def _fetchone(cursor: Any) -> tuple[Any, ...]:
+    "Fetch a row that the preceding statement is guaranteed to return."
+    row = cursor.fetchone()
+    if row is None:
+        raise RuntimeError("Expected the statement to return a row.")
+    return row
+
+
 class SQLAdapter(Adapter[TableStructure]):
     """SQLAdapter Class
 
@@ -186,10 +194,6 @@ class SQLAdapter(Adapter[TableStructure]):
                 raise ValueError(
                     f"primary_key column '{key}' has type {arrow_type} which is not suitable "
                     f"as a primary key (nested types and floating-point types are not allowed)"
-                )
-            if arg["direction"] not in ("asc", "desc"):
-                raise ValueError(
-                    f"order_by direction must be 'asc' or 'desc', got '{arg['direction']}'"
                 )
         for key in self.primary_key:
             if key not in self.structure().columns:
@@ -261,7 +265,7 @@ class SQLAdapter(Adapter[TableStructure]):
                     )
 
         with closing(storage.connect()) as conn:
-            with conn.cursor() as cursor:
+            with closing(conn.cursor()) as cursor:
                 cursor.execute(create_table_statement)
 
             # Create an index on the dataset_id and partition_id columns to speed up queries.
@@ -270,7 +274,7 @@ class SQLAdapter(Adapter[TableStructure]):
                 "CREATE INDEX IF NOT EXISTS dataset_and_partition_index "
                 f'ON "{table_name}"(_dataset_id, _partition_id)'
             )
-            with conn.cursor() as cursor:
+            with closing(conn.cursor()) as cursor:
                 cursor.execute(create_index_statement)
 
             if primary_key:
@@ -279,7 +283,7 @@ class SQLAdapter(Adapter[TableStructure]):
                     "CREATE UNIQUE INDEX IF NOT EXISTS unique_ordering_per_dataset_index "
                     f'ON "{table_name}"(_dataset_id, {pkey_columns})'
                 )
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     cursor.execute(create_unique_index_statement)
 
             # Just once, create a SEQUENCE (or the closest analogue in SQLite) to
@@ -289,28 +293,28 @@ class SQLAdapter(Adapter[TableStructure]):
             # initializing here.
             if storage.dialect == "sqlite":
                 # Create single-row table with a counter, if it does not exist.
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     cursor.execute(
                         "CREATE TABLE IF NOT EXISTS _dataset_id_counter (value INTEGER NOT NULL)"
                     )
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     cursor.execute(
                         "INSERT INTO _dataset_id_counter (value) "
                         "SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM _dataset_id_counter)"
                     )
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     # Increment the counter.
                     cursor.execute(
                         "UPDATE _dataset_id_counter SET value = value + 1 "
                         "RETURNING value"
                     )
-                    (dataset_id,) = cursor.fetchone()
+                    (dataset_id,) = _fetchone(cursor)
             else:
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     cursor.execute("CREATE SEQUENCE IF NOT EXISTS _dataset_id_counter")
-                with conn.cursor() as cursor:
+                with closing(conn.cursor()) as cursor:
                     cursor.execute("SELECT nextval('_dataset_id_counter')")
-                    (dataset_id,) = cursor.fetchone()
+                    (dataset_id,) = _fetchone(cursor)
             data_source.parameters["dataset_id"] = dataset_id
             conn.commit()
 
@@ -339,7 +343,7 @@ class SQLAdapter(Adapter[TableStructure]):
         data_source: DataSource[TableStructure],
         node: Node,
         /,
-        **kwargs: Any | None,
+        **kwargs: Any,
     ) -> SQLAdapter:
         return cls(
             data_source.assets[0].data_uri,
@@ -470,21 +474,19 @@ class SQLAdapter(Adapter[TableStructure]):
         ----------
         partition : int
             The partition number to which the data will be appended.
-        data : list[pyarrow.RecordBatch] | pyarrow.RecordBatch | pandas.DataFrame | pyarrow.Table
+        data : Union[List[pyarrow.RecordBatch], pyarrow.RecordBatch, pandas.DataFrame, pyarrow.Table]
             data to append to the database.
         """
 
         # Convert the data to pyarrow table
-        if isinstance(data, pyarrow.Table):
-            table = data
+        if isinstance(data, list):
+            table = pyarrow.Table.from_batches(data)
         elif isinstance(data, pandas.DataFrame):
             table = pyarrow.Table.from_pandas(data)
+        elif isinstance(data, pyarrow.Table):
+            table = data
         else:
-            if not isinstance(data, list):
-                batches = [data]
-            else:
-                batches = data
-            table = pyarrow.Table.from_batches(batches)
+            table = pyarrow.Table.from_batches([data])
         # Explicitly cast the table to the structure's schema
         table = table.cast(self.structure().arrow_schema_decoded)
         # Prepend columns for internal dataset_id and partition number.
@@ -503,7 +505,7 @@ class SQLAdapter(Adapter[TableStructure]):
             table = table.rename_columns(upr_lwr_case_mapping)
 
         with closing(self.storage.connect()) as conn:
-            with conn.cursor() as cursor:
+            with closing(conn.cursor()) as cursor:
                 cursor.adbc_ingest(self.table_name, table, mode="append")
             conn.commit()
 
@@ -554,7 +556,7 @@ class SQLAdapter(Adapter[TableStructure]):
             query += " ORDER BY " + ", ".join(order_by)
 
         with closing(self.storage.connect()) as conn:
-            with conn.cursor() as cursor:
+            with closing(conn.cursor()) as cursor:
                 cursor.execute(query)
                 data = cursor.fetch_arrow_table()
             conn.commit()
