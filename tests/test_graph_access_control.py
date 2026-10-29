@@ -548,6 +548,12 @@ async def test_link_crud_and_access_control(store, policy):
     assert denied_update.errors
     assert "Not permitted" in denied_update.errors[0].message
 
+    null_predicate = await _execute(
+        update_link, alice_ctx, {"id": link_id, "input": {"predicate": None}}
+    )
+    assert null_predicate.errors
+    assert "predicate cannot be null" in null_predicate.errors[0].message
+
     updated = await _execute(
         update_link,
         alice_ctx,

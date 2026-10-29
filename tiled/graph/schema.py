@@ -677,6 +677,8 @@ class Mutation:
             access_tags = await _modify_access_tags(
                 info, normalize_access_tags(current.access_tags), requested_access_tags
             )
+        if input.predicate is None:
+            raise GraphQLError("predicate cannot be null")
         predicate = (
             STORE_UNSET
             if input.predicate is UNSET
