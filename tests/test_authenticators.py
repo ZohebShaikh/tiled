@@ -755,3 +755,50 @@ def test_extract_scopes_empty_scope_is_empty_set():
     ) == {"read:data", "write:data"}
     # "scope" (even empty) takes precedence over "scp" and is not overridden.
     assert _extract_scopes({"scope": "", "scp": "read:data"}, None) == set()
+
+
+def test_saml_authenticate(monkeypatch):
+    "SAMLAuthenticator.authenticate passes the IdP response through to python3-saml."
+    pytest.importorskip("onelogin.saml2.auth")
+    import onelogin.saml2.auth
+
+    from tiled.authenticators import SAMLAuthenticator
+
+    class FakeAuth:
+        def __init__(self, req, settings):
+            assert req["post_data"]["SAMLResponse"] == "response"
+
+        def process_response(self):
+            pass
+
+        def get_errors(self):
+            return []
+
+        def is_authenticated(self):
+            return True
+
+        def get_attributes(self):
+            return {"uid": ["alice"]}
+
+    monkeypatch.setattr(onelogin.saml2.auth, "OneLogin_Saml2_Auth", FakeAuth)
+    body = urlencode({"SAMLResponse": "response"}).encode()
+
+    async def receive():
+        return {"type": "http.request", "body": body}
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/acs",
+            "query_string": b"",
+            "headers": [(b"content-type", b"application/x-www-form-urlencoded")],
+            "client": ("127.0.0.1", 1234),
+            "server": ("localhost", 8000),
+            "scheme": "http",
+        },
+        receive,
+    )
+    authenticator = SAMLAuthenticator({}, attribute_name="uid")
+    state = asyncio.run(authenticator.authenticate(request))
+    assert state.user_name == "alice"

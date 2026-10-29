@@ -41,6 +41,7 @@ Write the date in place of the "Unreleased" in the case a new version is release
 
 ### Fixed
 
+- Every SAML login raised `TypeError`: `SAMLAuthenticator.authenticate` passed an extra argument to `prepare_saml_from_fastapi_request`.
 - Fixed `ArrayClient.patch` on arrays whose shape is not a whole number of
   chunks. The check for writing past the end, and the new shape after
   `extend=True`, used the Zarr array's shape, which is rounded up to whole

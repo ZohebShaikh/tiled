@@ -704,7 +704,7 @@ class SAMLAuthenticator(ExternalAuthenticator):
             )
         from onelogin.saml2.auth import OneLogin_Saml2_Auth
 
-        req = await prepare_saml_from_fastapi_request(request, True)
+        req = await prepare_saml_from_fastapi_request(request)
         auth = OneLogin_Saml2_Auth(req, self.saml_settings)
         auth.process_response()  # Process IdP response
         errors = auth.get_errors()  # This method receives an array with the errors
