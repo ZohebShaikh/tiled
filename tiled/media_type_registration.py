@@ -287,19 +287,10 @@ if modules_available("zstandard"):
         default_compression_registry.register(media_type, "zstd", ZstdBuffer)
 
 if modules_available("lz4"):
-    import lz4
+    # This workaround is cribbed from distributed.protocol.compression.
+    import lz4.block
 
-    # These fallback and workaround paths are cribbed from
-    # distributed.protocol.compression.
-
-    try:
-        # try using the new lz4 API
-        import lz4.block
-
-        lz4_compress = lz4.block.compress
-    except ImportError:
-        # fall back to old one
-        lz4_compress = lz4.LZ4_compress
+    lz4_compress = lz4.block.compress
 
     # helper to bypass missing memoryview support in current lz4
     # (fixed in later versions)

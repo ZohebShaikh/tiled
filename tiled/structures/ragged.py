@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import NewType, Self, cast, runtime_checkable
+from typing import Any, NewType, Self
 
 import awkward
 import numpy
 import ragged
+from awkward.types.numpytype import dtype_to_primitive
 from ragged._typing import SupportsDLPack
 
 from ..ndslice import NDSlice
-from ..type_aliases import JSON
 from .array import BuiltinDtype, StructDtype
 from .root import Structure
 
@@ -31,9 +31,6 @@ class RaggedRegularizationError(ValueError):
     cannot be regularized."""
 
     pass
-
-
-_SupportsDLPack = runtime_checkable(cast("type[SupportsDLPack]", SupportsDLPack))
 
 
 @dataclass(kw_only=True)
@@ -124,16 +121,19 @@ class RaggedStructure(Structure):
         else:
             data_type = BuiltinDtype.from_numpy_dtype(array.dtype)
 
+        # ragged annotates size as Optional, but it is never None.
+        size = array.size
+        assert size is not None
         return cls(
             data_type=data_type,
             shape=shape,
-            size=array.size,
+            size=size,
             chunks=chunks,
             dims=dims,
         )
 
     @classmethod
-    def from_json(cls, structure: JSON) -> Self:
+    def from_json(cls, structure: Mapping[str, Any]) -> Self:
         "Construct a RaggedStructure from a dictionary mapping"
 
         if "fields" in structure["data_type"]:
@@ -168,13 +168,12 @@ class RaggedStructure(Structure):
         For each subsequent dimension, if it is variable-length (None), a ListOffsetForm is used
         with the appropriate offsets and content. If it is fixed-size, a RegularForm is created.
         """
-        primitive = awkward.types.numpytype.dtype_to_primitive(
-            self.data_type.to_numpy_dtype()
-        )
+        primitive = dtype_to_primitive(self.data_type.to_numpy_dtype())
         inner_shape, form, ndims = (), None, len(self.shape)
 
         for dim in reversed(range(1, ndims)):
-            if self.shape[dim] is None:
+            size = self.shape[dim]
+            if size is None:
                 if form is None:
                     # Encountered first inner variable-length dimension, create a NumpyForm
                     form = awkward.forms.NumpyForm(
@@ -191,13 +190,13 @@ class RaggedStructure(Structure):
                 # Fixed-size dimension, wrap the existing (variable-length) form in a RegularForm
                 form = awkward.forms.RegularForm(
                     content=form,
-                    size=self.shape[dim],
+                    size=size,
                     form_key=f"node{dim - 1}",
                 )
 
             else:
                 # Fixed-size inner dimension, accumulate it into the inner_shape of the NumpyForm
-                inner_shape = (self.shape[dim], *inner_shape)
+                inner_shape = (size, *inner_shape)
 
         # If the loop has completed but we haven't created a form yet,
         # which means the array is fully fixed-sized, create a NumpyForm for the entire shape.
@@ -208,7 +207,9 @@ class RaggedStructure(Structure):
     @property
     def awkward_length(self) -> int:
         "Length of corresponding awkward buffers, i.e. the first dimension of the array"
-        return self.shape[0]
+        length = self.shape[0]
+        assert length is not None  # Validated in __post_init__.
+        return length
 
     @property
     def ndim_fixed(self) -> int:
@@ -257,7 +258,7 @@ def _canonicalize_awkward_layout(
     # produces a ``NumpyArray(int64)`` leaf -- not an ``EmptyArray`` -- and
     # round-trips faithfully without entering this branch.
     if isinstance(layout, awkward.contents.EmptyArray):
-        return awkward.contents.NumpyArray(numpy.empty(0, dtype=numpy.float64))
+        return awkward.to_layout(numpy.empty(0, dtype=numpy.float64))
 
     # Convert ListArray -> ListOffsetArray
     if isinstance(layout, awkward.contents.ListArray):
@@ -293,7 +294,8 @@ def _canonicalize_awkward_layout(
 
         if isinstance(node, awkward.contents.NumpyArray):
             return awkward.contents.NumpyArray(
-                node.data.reshape(-1, *sizes),
+                # awkward's ArrayLike protocol does not admit numpy arrays.
+                numpy.reshape(node.data, (-1, *sizes)),  # pyright: ignore[reportArgumentType]
                 parameters=node.parameters,
             )
 
@@ -345,74 +347,88 @@ def make_ragged_array(
     """
 
     if isinstance(array, ragged.array):
-        pass
+        result = array
     elif isinstance(array, numpy.ndarray):
         # this assumes that any nested-arrays do *not* have an object dtype
         if array.dtype.name == "object":
             array = ragged.array([row.tolist() for row in array])
-        array = ragged.array(array)
-    elif isinstance(array, (awkward.Array, _SupportsDLPack)):
-        array = ragged.array(array)
-    elif hasattr(array, "tolist"):
-        array = ragged.array(array.tolist())
+        result = ragged.array(array)
+    elif isinstance(array, awkward.Array) or hasattr(array, "__dlpack__"):
+        result = ragged.array(array)
+    elif (tolist := getattr(array, "tolist", None)) is not None:
+        result = ragged.array(tolist())
+    elif isinstance(array, Iterable):
+        result = ragged.array(list(array))
     else:
-        array = ragged.array(list(array))
+        raise TypeError(f"Cannot convert {type(array)} to a ragged array.")
 
-    ndims = array.ndim
+    ndims = result.ndim
     if shape is not None and len(shape) != ndims:
         raise ValueError(
-            f"Desired shape {shape} has different number of dimensions than the input array, {array.shape}"
+            f"Desired shape {shape} has different number of dimensions than the input array, {result.shape}"
         )
 
-    array = _canonicalize_awkward_layout(array._impl.layout)
+    layout = _canonicalize_awkward_layout(_awkward_impl(result).layout)
 
     if shape or regularize:
         for dim in reversed(range(1, ndims)):
             if shape and shape[dim] is None:
                 continue
             try:
-                array = awkward.to_regular(array, axis=dim)
+                layout = awkward.to_regular(layout, axis=dim)
             except ValueError:
                 if shape and shape[dim] is not None:
                     raise RaggedRegularizationError(
                         f"Cannot regularize dimension {dim} to the desired shape {shape}"
                     )
 
-    array = ragged.array(array)
+    result = ragged.array(layout)
 
     if slice is not None:
         try:
-            array = array[slice]
+            result = result[slice]
 
         except IndexError as e:
             if "cannot slice" in str(e):
                 raise RaggedSlicingError(
-                    f"Invalid slice {slice} for the given ragged array with shape {array.shape}."
+                    f"Invalid slice {slice} for the given ragged array with shape {result.shape}."
                 ) from e
 
         # Drop data that are not included in the slice from the buffers
-        if array.ndim > 0:
-            array = make_ragged_array(awkward.to_packed(array._impl))
+        if result.ndim > 0:
+            result = make_ragged_array(awkward.to_packed(_awkward_impl(result)))
 
-    return cast(CanonicalRaggedArray, array)
+    return CanonicalRaggedArray(result)
+
+
+def _awkward_impl(array: ragged.array) -> awkward.Array:
+    "The awkward.Array backing a ragged array of at least one dimension."
+    impl = array._impl
+    if not isinstance(impl, awkward.Array):
+        raise ValueError("Expected a ragged array with at least one dimension.")
+    return impl
 
 
 def make_ragged_chunks(
     array: CanonicalRaggedArray, limit_bytes: int
-) -> tuple[int, ...]:
+) -> tuple[tuple[int, ...] | None, ...]:
     """Row-wise partitioning of a ragged array into chunks of at most `limit_bytes` bytes."""
     ndim_fixed = array.shape.index(None) if None in array.shape else len(array.shape)
     chunks_none = (None,) * (array.ndim - ndim_fixed)
-    if array._impl.nbytes <= limit_bytes:
-        return tuple((sh,) for sh in array.shape[:ndim_fixed]) + chunks_none
+    impl = _awkward_impl(array)
+    if impl.nbytes <= limit_bytes:
+        return (
+            tuple((sh,) for sh in array.shape[:ndim_fixed] if sh is not None)
+            + chunks_none
+        )
 
     # Chunk along the leftmost dimension. Work with boundary indices internally, convert to sizes at the end.
-    boundaries: list[int] = [0, cast("int", array.shape[0])]
+    boundaries: list[int] = [0, len(impl)]
     chunk_index = 0
 
     while chunk_index < len(boundaries) - 1:
         start, end = boundaries[chunk_index], boundaries[chunk_index + 1]
-        part = awkward.to_packed(array._impl[start:end])
+        part = awkward.to_packed(impl[start:end])
         if part.nbytes > limit_bytes:
             if end - start == 1:
                 raise ValueError(
@@ -424,7 +440,7 @@ def make_ragged_chunks(
             chunk_index += 1
 
     chunks_0 = (tuple(end - start for start, end in zip(boundaries, boundaries[1:])),)
-    chunks_fixed = tuple((sh,) for sh in array.shape[1:ndim_fixed])
+    chunks_fixed = tuple((sh,) for sh in array.shape[1:ndim_fixed] if sh is not None)
 
     return chunks_0 + chunks_fixed + chunks_none
 
@@ -456,7 +472,7 @@ def ragged_to_dense(array: CanonicalRaggedArray) -> numpy.ndarray:
     return awkward.to_numpy(arr)
 
 
-def is_ragged_compatible_form(form: awkward.forms.form.Form) -> bool:
+def is_ragged_compatible_form(form: awkward.forms.Form) -> bool:
     """Check if an Awkward Form represents a ragged (or a uniform) array structure."""
     if isinstance(form, awkward.forms.NumpyForm):
         return form.primitive in {

@@ -3,10 +3,11 @@ import functools
 import os
 from abc import abstractmethod
 from collections import defaultdict
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    Any,
     Literal,
     NamedTuple,
 )
@@ -227,7 +228,7 @@ class ObjectStorage(Storage):
         object.__setattr__(self, "bucket", bucket_name)
 
     @classmethod
-    def parse_blob_uri(cls, uri: str) -> tuple[str, str, str]:
+    def parse_blob_uri(cls, uri: str) -> tuple[str, str | None, str]:
         """Split a blob URI into base URI, bucket name (optionally), and the prefix.
 
         For example, given 'http://example.com/bucket_name/path/to/blob',
@@ -288,6 +289,8 @@ class ObjectStorage(Storage):
             kwargs = {"url": self.uri.split(self.bucket, -1)[0], "bucket": self.bucket}
             if self.password is not None:
                 kwargs["service_account_key"] = self.password
+        else:
+            raise ValueError(f"Unknown object storage provider {self.provider!r}")
 
         _class = {"s3": S3Store, "azure": AzureStore, "google": GCSStore}[self.provider]
         prefix = uri[len(self.uri) :].lstrip("/") if uri else None
@@ -333,10 +336,12 @@ class SQLStorage(Storage):
         return self.create_adbc_connection()
 
     @functools.cached_property
-    def _connection_pool(self) -> "sqlalchemy.pool.QueuePool":
+    def _connection_pool(self) -> "sqlalchemy.pool.Pool":
         from .server.metrics import monitor_db_pool
 
-        creator = self._adbc_connection.adbc_clone
+        # Returns an ADBC DBAPI connection. Typed Any because SQLAlchemy's
+        # DBAPIConnection protocol requires a __getattr__ no driver declares.
+        creator: Callable[[], Any] = self._adbc_connection.adbc_clone
         if (self.dialect == "duckdb") or (":memory:" in self.uri):
             pool = sqlalchemy.pool.StaticPool(creator)
         else:
@@ -347,7 +352,7 @@ class SQLStorage(Storage):
 
         return pool
 
-    def connect(self) -> "adbc_driver_manager.dbapi.Connection":
+    def connect(self) -> "sqlalchemy.pool.PoolProxiedConnection":
         "Get a connection from the pool."
         return self._connection_pool.connect()
 
@@ -620,6 +625,8 @@ def size_from_uri(data_uri: str) -> int:
         return path_from_uri(data_uri).stat().st_size
     if scheme in SUPPORTED_OBJECT_URI_SCHEMES:
         storage = get_storage(data_uri)
+        if not isinstance(storage, ObjectStorage):
+            raise ValueError(f"No object storage is configured for {data_uri!r}")
         _, _, path = ObjectStorage.parse_blob_uri(data_uri)
         store = storage.get_obstore_location()
         return int(store.head(path)["size"])
@@ -645,6 +652,8 @@ def mtime_from_uri(data_uri: str) -> float:
         return path_from_uri(data_uri).stat().st_mtime
     if scheme in SUPPORTED_OBJECT_URI_SCHEMES:
         storage = get_storage(data_uri)
+        if not isinstance(storage, ObjectStorage):
+            raise ValueError(f"No object storage is configured for {data_uri!r}")
         _, _, path = ObjectStorage.parse_blob_uri(data_uri)
         store = storage.get_obstore_location()
         return store.head(path)["last_modified"].timestamp()

@@ -71,7 +71,12 @@ if modules_available("h5py"):
                     else:
                         node = node[key]
                     if key in group:
-                        group = group[key]
+                        existing = group[key]
+                        if not isinstance(existing, h5py.Group):
+                            raise SerializationError(
+                                f"Cannot nest data under {key!r}: it is not a group"
+                            )
+                        group = existing
                     else:
                         group = group.create_group(key)
                         try:

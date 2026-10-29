@@ -103,7 +103,7 @@ if modules_available("openpyxl", "pandas"):
     default_deserialization_registry.register(
         StructureFamily.table,
         XLSX_MIME_TYPE,
-        lambda mimetype, buffer: pandas.read_excel(buffer),
+        lambda buffer: pandas.read_excel(io.BytesIO(buffer)),
     )
     mimetypes.types_map.setdefault(".xlsx", XLSX_MIME_TYPE)
 
@@ -118,6 +118,7 @@ if modules_available("orjson"):
         Python-native equivalents, with missing values becoming None.
         """
         import numpy
+        import pandas
 
         arr = series.to_numpy(dtype=object, na_value=None)
 

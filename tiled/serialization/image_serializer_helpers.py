@@ -217,12 +217,9 @@ def _convert(image, dtype, force_copy=False, uniform=False):
     if not (dtype_in in _supported_types and dtype_out in _supported_types):
         raise ValueError(f"Can not convert from {dtypeobj_in} to {dtypeobj_out}.")
 
-    if kind_in in "ui":
-        imin_in = np.iinfo(dtype_in).min
-        imax_in = np.iinfo(dtype_in).max
-    if kind_out in "ui":
-        imin_out = np.iinfo(dtype_out).min
-        imax_out = np.iinfo(dtype_out).max
+    # Equal to np.iinfo(...).min/max for integer types; only used for those.
+    imin_in, imax_in = dtype_range[dtype_in]
+    imin_out, imax_out = dtype_range[dtype_out]
 
     # any -> binary
     if kind_out == "b":
