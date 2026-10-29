@@ -512,3 +512,50 @@ def test_tiled_mediated_device_flow_polling_pending(
 
     assert tokens == tokens_response
     assert token_polling_route.call_count == 2
+
+
+class _CollidingSession:
+    "Stands in for AsyncSession; commit() collides on user_code `collisions` times."
+
+    def __init__(self, collisions):
+        self.collisions = collisions
+        self.pending_rollback = False
+        self.committed = []
+
+    def add(self, obj):
+        self.obj = obj
+
+    async def commit(self):
+        from sqlalchemy.exc import IntegrityError
+
+        assert not self.pending_rollback, "commit() after a failed flush"
+        if self.collisions:
+            self.collisions -= 1
+            self.pending_rollback = True
+            raise IntegrityError("INSERT", {}, Exception("UNIQUE user_code"))
+        self.committed.append(self.obj)
+
+    async def rollback(self):
+        self.pending_rollback = False
+
+
+def test_create_pending_session_retries_after_collision():
+    import asyncio
+
+    from tiled.server.authentication import create_pending_session
+
+    db = _CollidingSession(collisions=1)
+    result = asyncio.run(create_pending_session(db))
+    (saved,) = db.committed
+    assert result["user_code"] == f"{saved.user_code[:4]}-{saved.user_code[4:]}"
+
+
+def test_create_pending_session_gives_up_after_repeated_collisions():
+    import asyncio
+
+    from sqlalchemy.exc import IntegrityError
+
+    from tiled.server.authentication import create_pending_session
+
+    with pytest.raises(IntegrityError):
+        asyncio.run(create_pending_session(_CollidingSession(collisions=3)))

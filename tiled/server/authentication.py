@@ -747,7 +747,7 @@ async def get_current_principal(
 async def create_pending_session(db: AsyncSession):
     device_code = secrets.token_bytes(32)
     hashed_device_code = hashlib.sha256(device_code).digest()
-    for _ in range(3):
+    for attempt in range(3):
         user_code = secrets.token_hex(4).upper()  # 8 digit code
         pending_session = orm.PendingSession(
             user_code=user_code,
@@ -759,7 +759,10 @@ async def create_pending_session(db: AsyncSession):
             await db.commit()
         except IntegrityError:
             # Since the user_code is short, we cannot completely dismiss the
-            # possibility of a collission. Retry.
+            # possibility of a collision. Roll back the failed insert and retry.
+            await db.rollback()
+            if attempt == 2:
+                raise
             continue
         break
     formatted_user_code = f"{user_code[:4]}-{user_code[4:]}"

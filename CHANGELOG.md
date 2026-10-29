@@ -41,6 +41,7 @@ Write the date in place of the "Unreleased" in the case a new version is release
 
 ### Fixed
 
+- `create_pending_session` could not recover from a user-code collision: it retried without rolling back the failed insert, and after three collisions returned a code that was never saved.
 - Fixed `ArrayClient.patch` on arrays whose shape is not a whole number of
   chunks. The check for writing past the end, and the new shape after
   `extend=True`, used the Zarr array's shape, which is rounded up to whole
