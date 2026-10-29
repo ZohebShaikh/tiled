@@ -125,3 +125,23 @@ def test_cli_version():
         assert process.stdout is not None
         line = process.stdout.readline()
     assert line.decode() == f"{__version__}{os.linesep}"
+
+
+def test_api_key_list_without_authentication(monkeypatch):
+    "'tiled api_key list' against a server with no authentication exits cleanly."
+    import warnings
+    from types import SimpleNamespace
+
+    from typer.testing import CliRunner
+
+    from tiled.commandline import _api_key
+
+    def whoami():
+        warnings.warn("Authentication providers were not configured on the server.")
+
+    monkeypatch.setattr(
+        _api_key, "get_context", lambda profile: SimpleNamespace(whoami=whoami)
+    )
+    result = CliRunner().invoke(_api_key.api_key_app, ["list"])
+    assert result.exit_code == 1
+    assert "does not use authentication" in result.output

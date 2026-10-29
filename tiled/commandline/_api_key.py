@@ -58,6 +58,11 @@ def list_api_keys(
 ):
     context = get_context(profile)
     info = context.whoami()
+    if info is None:
+        typer.echo(
+            "This server does not use authentication, so it has no API keys.", err=True
+        )
+        raise typer.Exit(1)
     if not info["api_keys"]:
         typer.echo("No API keys found", err=True)
         return
