@@ -13,8 +13,9 @@ TILED_LOG_AUTH_TOKEN = int(os.getenv("TILED_LOG_AUTH_TOKEN", False))
 
 class ClientLogRecord(logging.LogRecord):
     def getMessage(self):
-        if hasattr(self, "request"):
-            request = self.request
+        request = getattr(self, "request", None)
+        response = getattr(self, "response", None)
+        if request is not None:
             if "content-length" in request.headers:
                 size = f"({bytesize_repr(int(request.headers['content-length']))})"
             else:
@@ -38,9 +39,7 @@ class ClientLogRecord(logging.LogRecord):
                 if "authorization" in request.headers:
                     scheme, _, param = request.headers["authorization"].partition(" ")
                     message += f" 'authorization:{scheme} [redacted]'"
-        elif hasattr(self, "response"):
-            response = self.response
-            request = response.request
+        elif response is not None:
             if "content-length" in response.headers:
                 size = f"({bytesize_repr(int(response.headers['content-length']))})"
             else:

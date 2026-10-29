@@ -1,17 +1,22 @@
 import awkward
 
 from ..serialization.awkward import from_zipped_buffers, to_zipped_buffers
-from ..structures.awkward import project_form
+from ..structures.awkward import AwkwardStructure, project_form
 from .base import BaseClient
-from .utils import export_util, handle_error, retry_context
+from .utils import export_util, handle_error, retry_call, retry_context
 
 
 class AwkwardClient(BaseClient):
+    def structure(self) -> AwkwardStructure:
+        structure = super().structure()
+        assert isinstance(structure, AwkwardStructure)
+        return structure
+
     def __repr__(self):
         # TODO Include some summary of the structure. Probably
         # lift __repr__ code from awkward itself here.
         form = awkward.forms.from_dict(self.structure().form)
-        if isinstance(form, awkward.forms.recordform.RecordForm):
+        if isinstance(form, awkward.forms.RecordForm):
             out = f"<{type(self).__name__} {{"
             # Always show at least one field
             if form.fields:
@@ -60,15 +65,15 @@ class AwkwardClient(BaseClient):
         projected_form = project_form(form, form_keys_touched)
         # The order is not important, but sort so that the request is deterministic.
         form_keys = sorted(form_keys_touched)
-        for attempt in retry_context():
-            with attempt:
-                content = handle_error(
-                    self.context.http_client.post(
-                        self.item["links"]["buffers"],
-                        headers={"Accept": "application/zip"},
-                        json=form_keys,
-                    )
-                ).read()
+        content = retry_call(
+            lambda: handle_error(
+                self.context.http_client.post(
+                    self.item["links"]["buffers"],
+                    headers={"Accept": "application/zip"},
+                    json=form_keys,
+                )
+            ).read(),
+        )
         container = from_zipped_buffers(content, projected_form, structure.length)
         projected_array = awkward.from_buffers(
             projected_form, structure.length, container, allow_noncanonical_form=True

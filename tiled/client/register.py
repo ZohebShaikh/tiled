@@ -3,8 +3,10 @@ import dataclasses
 import logging
 import mimetypes
 import re
+from collections.abc import Callable, Mapping
 from functools import partial
 from pathlib import Path
+from typing import Any
 
 import anyio
 import httpx2 as httpx
@@ -16,7 +18,7 @@ from ..mimetypes import (
 )
 from ..structures.core import StructureFamily
 from ..structures.data_source import Asset, DataSource, Management
-from ..utils import ensure_uri, import_object, path_from_uri
+from ..utils import ReadOnlyChainMap, ensure_uri, import_object, path_from_uri
 from .utils import ClientError
 
 logger = logging.getLogger(__name__)
@@ -89,11 +91,11 @@ def resolve_mimetype(path, mimetypes_by_file_ext, mimetype_detection_hook=None):
 
 @dataclasses.dataclass(frozen=True)
 class Settings:
-    adapters_by_mimetype: dict
-    mimetypes_by_file_ext: dict
-    mimetype_detection_hook: callable
-    key_from_filename: callable
-    filter: callable
+    adapters_by_mimetype: Mapping[str, Any]
+    mimetypes_by_file_ext: Mapping[str, str]
+    mimetype_detection_hook: Callable | None
+    key_from_filename: Callable
+    filter: Callable
 
     @classmethod
     def init(
@@ -110,7 +112,7 @@ class Settings:
         for key, value in list((adapters_by_mimetype).items()):
             if isinstance(value, str):
                 adapters_by_mimetype[key] = import_object(value)
-        merged_adapters_by_mimetype = collections.ChainMap(
+        merged_adapters_by_mimetype = ReadOnlyChainMap(
             adapters_by_mimetype, DEFAULT_REGISTRATION_ADAPTERS_BY_MIMETYPE
         )
         if isinstance(key_from_filename, str):
@@ -334,7 +336,7 @@ async def register_single_item(
             DataSource(
                 structure_family=adapter.structure_family,
                 mimetype=mimetype,
-                structure=dict_or_none(adapter.structure()),
+                structure=adapter.structure(),
                 parameters={},
                 management=Management.external,
                 assets=[
@@ -483,7 +485,7 @@ async def register_image_sequence(node, name, sequence, settings):
             DataSource(
                 structure_family=adapter.structure_family,
                 mimetype=mimetype,
-                structure=dict_or_none(adapter.structure()),
+                structure=adapter.structure(),
                 parameters={},
                 management=Management.external,
                 assets=[
@@ -685,9 +687,3 @@ async def create_node_or_drop_collision(
             )
         else:
             raise
-
-
-def dict_or_none(structure):
-    if structure is None:
-        return None
-    return dataclasses.asdict(structure)

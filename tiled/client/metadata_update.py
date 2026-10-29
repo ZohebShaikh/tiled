@@ -34,7 +34,7 @@ def _update_obj(result, obj, position=None):
                 _update_obj(target, value, position)
                 continue
             result[key] = OrderedDict() if position else {}
-            if position and position == "first":
+            if position == "first" and isinstance(result, OrderedDict):
                 result.move_to_end(key, False)
             _update_obj(result[key], value, position)
             continue
@@ -43,7 +43,8 @@ def _update_obj(result, obj, position=None):
             continue
         if key not in result and position == "first":
             result[key] = value
-            result.move_to_end(key, False)
+            if isinstance(result, OrderedDict):
+                result.move_to_end(key, False)
         else:
             result[key] = value
 

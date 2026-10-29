@@ -1,10 +1,13 @@
 import math
 import threading
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-import dask
 import dask.array
 import xarray
+from dask.base import is_dask_collection
+from dask.delayed import delayed
 
 from ..serialization.table import deserialize_arrow
 from ..structures.core import Spec
@@ -117,11 +120,16 @@ class DaskDatasetClient(Container):
                     )
         return data_vars, coords, direct_fetch_names
 
+    @property
+    def _attrs(self) -> Mapping[str, Any]:
+        attrs = self.metadata["attrs"]
+        if not isinstance(attrs, Mapping):
+            raise ValueError("Metadata 'attrs' of xarray_dataset must be a mapping.")
+        return attrs
+
     def read(self, variables=None, *, optimize_wide_table=True):
         data_vars, coords, _ = self._build_arrays(variables, optimize_wide_table)
-        return xarray.Dataset(
-            data_vars=data_vars, coords=coords, attrs=self.metadata["attrs"]
-        )
+        return xarray.Dataset(data_vars=data_vars, coords=coords, attrs=self._attrs)
 
 
 class DatasetClient(DaskDatasetClient):
@@ -129,14 +137,12 @@ class DatasetClient(DaskDatasetClient):
         data_vars, coords, direct_fetch_names = self._build_arrays(
             variables, optimize_wide_table
         )
-        ds = xarray.Dataset(
-            data_vars=data_vars, coords=coords, attrs=self.metadata["attrs"]
-        )
+        ds = xarray.Dataset(data_vars=data_vars, coords=coords, attrs=self._attrs)
         # Count fetch tasks only for direct-fetch variables (not wide-table).
         # Wide-table variables use dask.delayed and don't advance the bar.
         total = 0
         for name, var in list(ds.data_vars.items()) + list(ds.coords.items()):
-            if name in direct_fetch_names and dask.is_dask_collection(var.data):
+            if name in direct_fetch_names and is_dask_collection(var.data):
                 total += math.prod(len(c) for c in var.data.chunks)
         with self.context.tracking_progress(total):
             return ds.load()
@@ -160,9 +166,13 @@ class _WideTableFetcher:
         if self._dataframe is not None:
             raise RuntimeError("Cannot add variables; already fetched.")
         self.variables.append(name)
-        # TODO Can we avoid .values here?
+
+        def column():
+            # TODO Can we avoid .values here?
+            return self.dataframe()[name].values
+
         return dask.array.from_delayed(
-            dask.delayed(self.dataframe)()[name].values,
+            delayed(column)(),
             shape=array_structure.shape,
             dtype=array_structure.data_type.to_numpy_dtype(),
         )
