@@ -1,23 +1,45 @@
 from collections.abc import Callable, Coroutine, Mapping, Sequence
+from collections.abc import Set as AbstractSet
 from types import EllipsisType
 from typing import (
     Annotated,
     Any,
+    Protocol,
     TypedDict,
+    runtime_checkable,
 )
 
 from pydantic import AfterValidator
 
-from .utils import import_object
+from .utils import Sentinel, import_object
 
 JSON_ITEM = str | int | float | Mapping[str, "JSON_ITEM"] | Sequence["JSON_ITEM"] | None
 JSON = Mapping[str, JSON_ITEM]
 
 AccessTags = frozenset[str]
-Scopes = set[str]
+Scopes = AbstractSet[str]
 Query = Any  # for now...
-Filters = list[Query]
+# A list of queries, or the NO_ACCESS sentinel (access_control.access_policies)
+Filters = list[Query] | Sentinel
 Chunks = tuple[tuple[int, ...], ...]
+
+
+@runtime_checkable
+class ArrayLikeObject(Protocol):
+    "An array object (numpy, dask, zarr, h5py, ...) that can back an ArrayAdapter."
+
+    # Any rather than Tuple[int, ...]: dask uses NaN for unknown dimensions,
+    # and declares shape with its own cached_property descriptor.
+    @property
+    def shape(self) -> Any: ...
+
+    @property
+    def dtype(self) -> Any: ...
+
+    def __getitem__(self, key: Any, /) -> Any: ...
+
+    def __array__(self) -> Any: ...
+
 
 AppTask = Callable[[], Coroutine[None, None, Any]]
 """Async function to be run as part of the app's lifecycle"""
@@ -29,8 +51,9 @@ class TaskMap(TypedDict):
     shutdown: list[AppTask]
 
 
+# A 'module:attribute' string (or the live object), validated into the object.
 EntryPointString = Annotated[
-    str,
+    Any,
     AfterValidator(import_object),
 ]
 

@@ -42,11 +42,11 @@ class TableStructure(Structure):
 
     @classmethod
     def from_dask_dataframe(cls, ddf) -> "TableStructure":
-        import dask.dataframe.utils
+        import dask.dataframe.dispatch
 
         # Make a pandas Table with 0 rows.
         # We can use this to define an Arrow schema without loading any row data.
-        meta = dask.dataframe.utils.make_meta(ddf)
+        meta = dask.dataframe.dispatch.make_meta(ddf)
         schema = pyarrow.Table.from_pandas(meta).schema
         return cls(
             arrow_schema=_uri_from_schema(schema),

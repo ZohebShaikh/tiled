@@ -95,8 +95,8 @@ if modules_available("PIL"):
         from PIL import Image
 
         file = io.BytesIO(buffer)
-        image = Image.open(file, format=format)
-        return numpy.asarray(image).asdtype(dtype).reshape(shape)
+        image = Image.open(file, formats=[format])
+        return numpy.asarray(image).astype(dtype).reshape(shape)
 
     default_serialization_registry.register(
         "array",
@@ -106,16 +106,14 @@ if modules_available("PIL"):
     default_deserialization_registry.register(
         "array",
         "image/png",
-        lambda mimetype, buffer, dtype, shape: array_from_buffer_PIL(
-            buffer, "png", dtype, shape
-        ),
+        lambda buffer, dtype, shape: array_from_buffer_PIL(buffer, "png", dtype, shape),
     )
 if modules_available("tifffile"):
 
-    def array_from_buffer_tifffile(mimetype, buffer, dtype, shape):
+    def array_from_buffer_tifffile(buffer, dtype, shape):
         from tifffile import imread
 
-        return imread(buffer).astype(dtype).reshape(shape)
+        return imread(io.BytesIO(buffer)).astype(dtype).reshape(shape)
 
     def save_to_buffer_tifffile(mimetype, array, metadata):
         from tifffile import imwrite

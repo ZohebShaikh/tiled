@@ -1,7 +1,7 @@
 import io
 
 from ..media_type_registration import default_serialization_registry
-from ..utils import ensure_awaitable, modules_available
+from ..utils import SerializationError, ensure_awaitable, modules_available
 from .container import walk
 from .table import (
     APACHE_ARROW_FILE_MIME_TYPE,
@@ -125,7 +125,12 @@ if modules_available("h5py"):
                 for key in key_path[:-1]:
                     node = node[key]
                     if key in group:
-                        group = group[key]
+                        existing = group[key]
+                        if not isinstance(existing, h5py.Group):
+                            raise SerializationError(
+                                f"Cannot nest data under {key!r}: it is not a group"
+                            )
+                        group = existing
                     else:
                         group = group.create_group(key)
                         group.attrs.update(node.metadata()["attrs"])

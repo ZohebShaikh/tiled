@@ -13,6 +13,7 @@ from typing import Annotated, Any
 from pydantic import StringConstraints
 
 from ..utils import OneShotCachedMap, filter_known_kwargs
+from .root import Structure
 
 
 class StructureFamily(enum.StrEnum):
@@ -55,8 +56,7 @@ class Spec:
         return cls(**filter_known_kwargs(cls, data))
 
 
-# TODO: make type[Structure] after #1036
-STRUCTURE_TYPES = OneShotCachedMap[StructureFamily, type](
+STRUCTURE_TYPES = OneShotCachedMap[StructureFamily, type[Structure]](
     {
         StructureFamily.array: lambda: (
             importlib.import_module(

@@ -1,10 +1,11 @@
+import builtins
 import enum
 import math
 import os
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar
 
 import numpy
 
@@ -13,7 +14,10 @@ from tiled.structures.root import Structure
 from ..type_aliases import Chunks
 
 # from dtype.descr
-FieldDescr = tuple[str, str] | tuple[str, str, tuple[int, ...]]
+# (name, type) or (name, type, shape); type is a dtype string or, for a
+# nested struct, that struct's descr.
+_FieldType = str | list["FieldDescr"]
+FieldDescr = tuple[str, _FieldType] | tuple[str, _FieldType, tuple[int, ...]]
 NumpyDescr = list[FieldDescr]
 
 
@@ -67,8 +71,8 @@ class Kind(enum.StrEnum):
         object = "O"  # Object (i.e. the memory contains a pointer to PyObject)
 
     @classmethod
-    def _missing_(cls, key: str):
-        if key == "O":
+    def _missing_(cls, value: builtins.object):
+        if value == "O":
             raise ObjectArrayTypeDisabled(
                 "Numpy 'object'-type arrays are not enabled by default "
                 "because their binary representation is not interpretable "
@@ -109,7 +113,7 @@ class BuiltinDtype:
             dt_units = f"[{count if count > 1 else ''}{unit}]"
 
         return cls(
-            endianness=cls._endianness_map[dtype.byteorder],
+            endianness=Endianness(cls._endianness_map[dtype.byteorder]),
             kind=Kind(dtype.kind),
             itemsize=dtype.itemsize,
             dt_units=dt_units,
@@ -154,16 +158,15 @@ class Field:
 
     @classmethod
     def from_numpy_descr(cls, field: FieldDescr) -> "Field":
-        name, *rest = field
+        if len(field) == 3:
+            name, f_type, shape = field
+        else:
+            name, f_type = field
+            shape = None
         if name == "":
             raise ValueError(
                 f"You seem to have gotten descr of a base or subdtype: {field}"
             )
-        if len(rest) == 1:
-            (f_type,) = rest
-            shape = None
-        else:
-            f_type, shape = rest
 
         if isinstance(f_type, str):
             FType = BuiltinDtype.from_numpy_dtype(numpy.dtype(f_type))
@@ -173,13 +176,13 @@ class Field:
 
     def to_numpy_descr(self) -> FieldDescr:
         if isinstance(self.dtype, BuiltinDtype):
-            base = [self.name, self.dtype.to_numpy_str()]
+            f_type: _FieldType = self.dtype.to_numpy_str()
         else:
-            base = [self.name, self.dtype.to_numpy_descr()]
+            f_type = self.dtype.to_numpy_descr()
         if self.shape is None:
-            return tuple(base)
+            return (self.name, f_type)
         else:
-            return tuple(base + [self.shape])
+            return (self.name, f_type, self.shape)
 
     @classmethod
     def from_json(cls, structure: Mapping[str, Any]) -> "Field":
@@ -239,7 +242,7 @@ class ArrayStructure(Structure):
     resizable: bool | tuple[bool, ...] = False
 
     @classmethod
-    def from_json(cls, structure: Mapping[str, Any]) -> Self:
+    def from_json(cls, structure: Mapping[str, Any]) -> "ArrayStructure":
         if "fields" in structure["data_type"]:
             data_type = StructDtype.from_json(structure["data_type"])
         else:

@@ -617,10 +617,12 @@ class Key:
     def __init__(self, key):
         self.key = key
 
-    def __eq__(self, value):
+    # These build queries (Eq, NotEq) rather than returning bool. They are
+    # annotated Any, as numpy does, to stay compatible with object.__eq__.
+    def __eq__(self, value: object) -> Any:
         return Eq(self.key, value)
 
-    def __ne__(self, value):
+    def __ne__(self, value: object) -> Any:
         return NotEq(self.key, value)
 
     def __lt__(self, value):
