@@ -7,6 +7,11 @@ Write the date in place of the "Unreleased" in the case a new version is release
 
 ### Changed
 
+- In server configuration, an authenticator or access policy may be given as
+  `{type: "pkg.module:Class", ...arguments}` as an alternative to the import
+  path plus `args`. The existing form keeps working. Authenticator arguments
+  are validated when the configuration is loaded, and errors name their
+  location, e.g. `authentication.providers.0.authenticator.users_to_passwords`.
 - Authenticators are now pydantic models. Their configuration is declared as
   typed fields and validated when the server starts, and unknown arguments are
   rejected instead of ignored. Authenticators must be constructed with keyword

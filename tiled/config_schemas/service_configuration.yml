@@ -245,7 +245,7 @@ properties:
                 Unique URL-friendly string used to identify this identity provider
                 in Tiled URLs and in internal book-keeping.
             authenticator:
-              type: string
+              type: [string, object]
               description: |
                 Type of Authenticator to use.
 
@@ -273,6 +273,17 @@ properties:
                 args:
                   service: "custom_service"
                 ```
+
+                Equivalently, give the arguments inline with the type:
+
+                ```yaml
+                authenticator:
+                  type: tiled.examples.PAMAuthenticator
+                  service: "custom_service"
+                ```
+
+                The arguments are validated when the configuration is loaded,
+                and unknown arguments are rejected.
       tiled_admins:
         type: array
         items:
@@ -393,11 +404,19 @@ properties:
         description: Connection pool max overflow. Default is 5.
   access_control:
     type: object
-    additionalProperties: false
-    required:
-      - access_policy
-      - args
+    additionalProperties: true
     properties:
+      type:
+        type: string
+        description: |
+          Alternative to `access_policy` + `args`: give the import path as
+          `type` and the arguments inline.
+
+          ```yaml
+          type: "tiled.access_control.access_policies:TagBasedAccessPolicy"
+          provider: "pam"
+          access_tags_parser: "tiled.access_control.access_tags:AccessTagsParser"
+          ```
       access_policy:
         type: [string, "null"]
         description: |
