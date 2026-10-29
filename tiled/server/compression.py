@@ -38,7 +38,7 @@ class CompressionResponder:
         self.accepted = accepted
         self.compression_registry = compression_registry
         self.send: Send = unattached_send
-        self.scope: Scope = None
+        self.scope: Scope = {}
         self.initial_message: Message = {}
         self.started = False
 

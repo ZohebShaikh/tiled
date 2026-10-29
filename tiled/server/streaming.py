@@ -3,7 +3,7 @@ import itertools
 import logging
 import weakref
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Iterator
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -12,6 +12,7 @@ import orjson
 from fastapi import WebSocketDisconnect
 from redis import asyncio as redis
 from redis.asyncio.sentinel import Sentinel
+from redis.typing import EncodableT, FieldT
 
 from ..ndslice import NDSlice
 from ..utils import safe_json_dump as _safe_json_dump
@@ -70,6 +71,7 @@ def safe_json_dump(content):
 class StreamingDatastore(Protocol):
     def __init__(self, settings: dict[str, Any]) -> None: ...
 
+    @property
     def client(self) -> Any: ...
 
     def make_ws_handler(
@@ -79,13 +81,13 @@ class StreamingDatastore(Protocol):
         uri,
         node_id,
         schema,
-    ) -> Callable[[int], None]: ...
+    ) -> Callable[..., Awaitable[None]]: ...
 
     async def incr_seq(self, node_id: str) -> int: ...
 
     async def set(self, node_id, sequence, metadata, payload=None) -> None: ...
 
-    async def get(self, key, *fields) -> None: ...
+    async def get(self, key, *fields) -> list[Any]: ...
 
     async def close(self, node_id) -> None: ...
 
@@ -230,7 +232,7 @@ def _make_ws_handler_common(
     live_sequence_source: Callable[
         [], Any
     ],  # returns (AsyncIterator[int], Optional[Callable[[], Awaitable[None]]])
-):
+) -> Callable[..., Awaitable[None]]:
     """
     Create a websocket handler that implements the streaming protocol for a node.
 
@@ -448,15 +450,15 @@ class TTLCacheDatastore(StreamingDatastore):
         self._lock = asyncio.Lock()
         maxsize = self._settings.get("maxsize", 1000)
         seq_ttl = self._settings.get("seq_ttl", 3600)
-        self._seq_cache = cachetools.TTLCache(
+        self._seq_cache = cachetools.TTLCache[str, int](
             maxsize=maxsize,
             ttl=seq_ttl,
         )
-        self._seq_counters = cachetools.TTLCache(
+        self._seq_counters = cachetools.TTLCache[str, Iterator[int]](
             maxsize=maxsize,
             ttl=seq_ttl,
         )
-        self._data_cache = cachetools.TTLCache(
+        self._data_cache = cachetools.TTLCache[str, dict[str, Any]](
             maxsize=maxsize, ttl=self._settings.get("data_ttl", 2592000)
         )
         self._pubsub = PubSub()
@@ -547,7 +549,7 @@ class RedisStreamingDatastore(StreamingDatastore):
 
     async def set(self, node_id, sequence, metadata, payload=None):
         pipeline = self.client.pipeline()
-        mapping = {
+        mapping: dict[FieldT, EncodableT] = {
             "sequence": sequence,
             "metadata": safe_json_dump(metadata),
         }

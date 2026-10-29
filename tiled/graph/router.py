@@ -105,7 +105,7 @@ def create_router(get_database_settings: Callable[[], DatabaseSettings]) -> APIR
         db_settings = get_database_settings()
         logger.info(
             "Initializing links store with shared DB pool: %s",
-            sanitize_uri(db_settings.uri)[0],
+            sanitize_uri(db_settings.uri or "")[0],
         )
         store.append(await GraphSQLAlchemyStore.from_database_settings(db_settings))
 

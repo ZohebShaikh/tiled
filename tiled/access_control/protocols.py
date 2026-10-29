@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
+from typing import Protocol, runtime_checkable
 
 from ..adapters.protocols import BaseAdapter
 from ..server.schemas import Principal
@@ -30,6 +31,20 @@ def normalize_access_tags(tags: Iterable[str] = ()) -> AccessTags:
     return frozenset(tags)
 
 
+@runtime_checkable
+class AccessTaggedAdapter(Protocol):
+    "An adapter whose nodes carry access tags, as tag-based policies require."
+
+    @property
+    def access_tags(self) -> AccessTags: ...
+
+
+def require_access_tags(node: BaseAdapter) -> AccessTags:
+    if not isinstance(node, AccessTaggedAdapter):
+        raise TypeError(f"Node {node!r} does not support access tags.")
+    return node.access_tags
+
+
 class AccessPolicy(ABC):
     @abstractmethod
     async def init_node(
@@ -55,7 +70,7 @@ class AccessPolicy(ABC):
     async def allowed_scopes(
         self,
         node: BaseAdapter,
-        principal: Principal,
+        principal: Principal | None,
         authn_access_tags: AccessTags | None,
         authn_scopes: Scopes,
     ) -> Scopes:
@@ -65,7 +80,7 @@ class AccessPolicy(ABC):
     async def filters(
         self,
         node: BaseAdapter,
-        principal: Principal,
+        principal: Principal | None,
         authn_access_tags: AccessTags | None,
         authn_scopes: Scopes,
         scopes: Scopes,

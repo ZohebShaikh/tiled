@@ -9,12 +9,12 @@ from typing import Any, Literal
 from fastapi import Request, WebSocket
 from starlette.types import Scope
 
-from ..access_control.access_policies import NO_ACCESS
 from ..access_control.protocols import AccessPolicy
 from ..adapters.mapping import MapAdapter
 from ..queries import AccessTagsFilter
 from ..server.schemas import Principal
 from ..type_aliases import AccessTags, Scopes
+from ..utils import Sentinel
 
 EMPTY_NODE = MapAdapter({})
 API_KEY_COOKIE_NAME = "tiled_api_key"
@@ -65,6 +65,8 @@ def get_trace_id() -> str | None:
     """
     if _tracer is None:
         return None
+    from opentelemetry import trace
+
     span_context = trace.get_current_span().get_span_context()
     if not (span_context.is_valid and span_context.trace_flags.sampled):
         return None
@@ -88,10 +90,12 @@ def record_timing(metrics: dict[str, Any], key: str) -> Generator[None]:
     disabled, or an excluded endpoint such as health checks and metrics
     scrapes) no span is created, avoiding orphaned single-span traces.
     """
-    if _tracer is not None and trace.get_current_span().is_recording():
-        span = _tracer.start_as_current_span(_SPAN_NAMES.get(key, f"tiled.{key}"))
-    else:
-        span = contextlib.nullcontext()
+    span: contextlib.AbstractContextManager[Any] = contextlib.nullcontext()
+    if _tracer is not None:
+        from opentelemetry import trace
+
+        if trace.get_current_span().is_recording():
+            span = _tracer.start_as_current_span(_SPAN_NAMES.get(key, f"tiled.{key}"))
     t0 = time.perf_counter()
     with span:
         yield
@@ -169,7 +173,7 @@ def _get_origin(request_headers: Mapping[str, str], scope: Scope) -> str:
 async def filter_for_access(
     entry,
     access_policy: AccessPolicy | None,
-    principal: Principal,
+    principal: Principal | None,
     authn_access_tags: AccessTags | None,
     authn_scopes: Scopes,
     scopes: Sequence[str],
@@ -191,7 +195,7 @@ async def filter_for_access(
             queries = await access_policy.filters(
                 entry, principal, authn_access_tags, authn_scopes, set(scopes)
             )
-            if queries is NO_ACCESS:
+            if isinstance(queries, Sentinel):
                 entry = EMPTY_NODE
             else:
                 for query in queries:

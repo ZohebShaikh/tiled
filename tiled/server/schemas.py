@@ -37,8 +37,7 @@ from ..structures.sparse import SparseStructure
 from ..structures.table import TableStructure
 
 if TYPE_CHECKING:
-    import tiled.authn_database.orm
-    import tiled.catalog.orm
+    pass
 
 DataT = TypeVar("DataT")
 LinksT = TypeVar("LinksT")
@@ -78,10 +77,12 @@ class PaginationLinks(pydantic.BaseModel):
 
 
 class EntryFields(enum.StrEnum):
+    # The str mixin lets callers pass plain strings and serialize members.
     metadata = "metadata"
     structure_family = "structure_family"
     structure = "structure"
-    count = "count"
+    # This member deliberately shadows str.count; "count" is an API field name.
+    count = "count"  # pyright: ignore[reportAssignmentType]
     sorting = "sorting"
     specs = "specs"
     data_sources = "data_sources"
@@ -125,7 +126,12 @@ class Asset(pydantic.BaseModel):
     id: int | None = None
 
     @classmethod
-    def from_orm(cls, orm: tiled.catalog.orm.Asset) -> Asset:
+    def from_orm(cls, obj: Any) -> Asset:
+        import tiled.catalog.orm
+
+        assert isinstance(obj, tiled.catalog.orm.Asset)
+        orm = obj
+        assert orm.data_uri is not None  # Assets are always created with a URI.
         return cls(
             data_uri=orm.data_uri,
             is_directory=orm.is_directory,
@@ -152,7 +158,12 @@ class Revision(pydantic.BaseModel):
     time_updated: datetime
 
     @classmethod
-    def from_orm(cls, orm: tiled.catalog.orm.Revision) -> Revision:
+    def from_orm(cls, obj: Any) -> Revision:
+        import tiled.catalog.orm
+
+        assert isinstance(obj, tiled.catalog.orm.Revision)
+        orm = obj
+        assert orm.time_updated is not None  # Set by a server default.
         # Trailing underscore in 'metadata_' avoids collision with
         # SQLAlchemy reserved word 'metadata'.
         return cls(
@@ -176,9 +187,11 @@ class DataSource(pydantic.BaseModel, Generic[StructureT]):
     model_config = pydantic.ConfigDict(extra="forbid")
 
     @classmethod
-    def from_orm(
-        cls, orm: tiled.catalog.orm.DataSource, include_assets: bool = True
-    ) -> DataSource:
+    def from_orm(cls, obj: Any, include_assets: bool = True) -> DataSource:
+        import tiled.catalog.orm
+
+        assert isinstance(obj, tiled.catalog.orm.DataSource)
+        orm = obj
         if hasattr(orm.structure, "structure"):
             structure_cls = STRUCTURE_TYPES[orm.structure_family]
             structure = structure_cls.from_json(orm.structure.structure)
@@ -192,13 +205,13 @@ class DataSource(pydantic.BaseModel, Generic[StructureT]):
             assets = [Asset.from_assoc_orm(assoc) for assoc in orm.asset_associations]
         else:
             assets = []
-        return cls(
+        return DataSource(
             id=orm.id,
             structure_family=orm.structure_family,
             structure=structure,
             mimetype=orm.mimetype,
-            parameters=orm.parameters,
-            properties=orm.properties,
+            parameters=orm.parameters or {},
+            properties=orm.properties or {},
             assets=assets,
             management=orm.management,
         )
@@ -335,7 +348,11 @@ class Identity(pydantic.BaseModel):
     latest_login: datetime | None = None
 
     @classmethod
-    def from_orm(cls, orm: tiled.authn_database.orm.Identity) -> Identity:
+    def from_orm(cls, obj: Any) -> Identity:
+        import tiled.authn_database.orm
+
+        assert isinstance(obj, tiled.authn_database.orm.Identity)
+        orm = obj
         return cls(id=orm.id, provider=orm.provider, latest_login=orm.latest_login)
 
 
@@ -346,7 +363,11 @@ class Role(pydantic.BaseModel):
     # principals
 
     @classmethod
-    def from_orm(cls, orm: tiled.authn_database.orm.Role) -> Role:
+    def from_orm(cls, obj: Any) -> Role:
+        import tiled.authn_database.orm
+
+        assert isinstance(obj, tiled.authn_database.orm.Role)
+        orm = obj
         return cls(name=orm.name, scopes=orm.scopes)
 
 
@@ -360,7 +381,11 @@ class APIKey(pydantic.BaseModel):
     latest_activity: datetime | None = None
 
     @classmethod
-    def from_orm(cls, orm: tiled.authn_database.orm.APIKey) -> APIKey:
+    def from_orm(cls, obj: Any) -> APIKey:
+        import tiled.authn_database.orm
+
+        assert isinstance(obj, tiled.authn_database.orm.APIKey)
+        orm = obj
         return cls(
             first_eight=orm.first_eight,
             expiration_time=orm.expiration_time,
@@ -375,9 +400,11 @@ class APIKeyWithSecret(APIKey):
     secret: str  # hex-encoded bytes
 
     @classmethod
-    def from_orm(
-        cls, orm: tiled.authn_database.orm.APIKeyWithSecret, secret: str
-    ) -> APIKeyWithSecret:
+    def from_orm_with_secret(cls, obj: Any, secret: str) -> APIKeyWithSecret:
+        import tiled.authn_database.orm
+
+        assert isinstance(obj, tiled.authn_database.orm.APIKey)
+        orm = obj
         return cls(
             first_eight=orm.first_eight,
             expiration_time=orm.expiration_time,
@@ -407,7 +434,11 @@ class Session(pydantic.BaseModel):
     state: dict[Any, Any] | None
 
     @classmethod
-    def from_orm(cls, orm: tiled.authn_database.orm.Session) -> Session:
+    def from_orm(cls, obj: Any) -> Session:
+        import tiled.authn_database.orm
+
+        assert isinstance(obj, tiled.authn_database.orm.Session)
+        orm = obj
         return cls(
             uuid=orm.uuid,
             expiration_time=orm.expiration_time,
@@ -434,9 +465,13 @@ class Principal(pydantic.BaseModel):
     @classmethod
     def from_orm(
         cls,
-        orm: tiled.authn_database.orm.Principal,
+        obj: Any,
         latest_activity: datetime | None = None,
     ) -> Principal:
+        import tiled.authn_database.orm
+
+        assert isinstance(obj, tiled.authn_database.orm.Principal)
+        orm = obj
         return cls(
             uuid=orm.uuid,
             type=orm.type,
@@ -561,22 +596,17 @@ class PutMetadataRequest(pydantic.BaseModel):
         return v
 
 
-def JSONPatchType(dtype=Any):
-    # we use functional syntax with TypedDict here since "from" is a keyword
-    return TypedDict(
-        "JSONPatchType",
-        {
-            "op": str,
-            "path": str,
-            "from": str,
-            "value": dtype,
-        },
-        total=False,
-    )
-
-
-JSONPatchSpec = JSONPatchType(Spec)
-JSONPatchAny = JSONPatchType(Any)
+# We use functional syntax with TypedDict here since "from" is a keyword.
+JSONPatchSpec = TypedDict(
+    "JSONPatchSpec",
+    {"op": str, "path": str, "from": str, "value": Spec},
+    total=False,
+)
+JSONPatchAny = TypedDict(
+    "JSONPatchAny",
+    {"op": str, "path": str, "from": str, "value": Any},
+    total=False,
+)
 
 
 class HyphenizedBaseModel(pydantic.BaseModel):

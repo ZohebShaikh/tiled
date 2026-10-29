@@ -167,7 +167,7 @@ def check_url_ssrf_safety(
         ) from exc
     ALL_BLOCKED_NETWORKS = get_combined_blocked_networks(local_blocked_networks)
     for _family, _type, _proto, _canonname, sockaddr in infos:
-        ip_str = sockaddr[0]
+        ip_str = str(sockaddr[0])
         try:
             addr = ipaddress.ip_address(ip_str)
         except ValueError:
@@ -404,7 +404,8 @@ class WebhookDispatcher:
             self._client = None
 
     async def dispatch(self, event: WebhookEvent, node_id: int) -> None:
-        if self._client is None:
+        client, sem = self._client, self._sem
+        if client is None or sem is None:
             return
 
         event_payload = event.model_dump(mode="json")
@@ -472,9 +473,9 @@ class WebhookDispatcher:
                 _secret=plaintext_secret,
                 _event_id=event_id,
             ):
-                async with self._sem:
+                async with sem:
                     await _deliver(
-                        client=self._client,
+                        client=client,
                         session_factory=self._session_factory,
                         delivery_id=_delivery_id,
                         url=_url,

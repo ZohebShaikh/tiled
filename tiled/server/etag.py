@@ -1,12 +1,13 @@
+import importlib
 import importlib.util
 
-if importlib.util.find_spec("dask.tokenize"):
-    # moved in dask version 2024.9.0
-    from dask.tokenize import normalize_object, normalize_token
-    from dask.tokenize import tokenize as dask_tokenize
-else:
-    from dask.base import normalize_object, normalize_token
-    from dask.base import tokenize as dask_tokenize
+# These moved from dask.base to dask.tokenize in dask version 2024.9.0.
+_dask_tokenize = importlib.import_module(
+    "dask.tokenize" if importlib.util.find_spec("dask.tokenize") else "dask.base"
+)
+normalize_object = _dask_tokenize.normalize_object
+normalize_token = _dask_tokenize.normalize_token
+dask_tokenize = _dask_tokenize.tokenize
 
 
 def tokenize(obj):
