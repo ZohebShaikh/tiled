@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 
-from sqlalchemy import literal, select, text
+from sqlalchemy import String, literal, select, text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from ..alembic_utils import (
@@ -141,7 +141,9 @@ async def register_tag_rows(
         ]
 
     # Skip names the column cannot hold; the caller's lookup rejects them.
-    max_length = tags.c.name.type.length
+    name_type = tags.c.name.type
+    assert isinstance(name_type, String) and name_type.length is not None
+    max_length = name_type.length
     names = {name for name in access_tag_names if len(name) <= max_length}
     if not names:
         return
