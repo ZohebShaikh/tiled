@@ -41,6 +41,7 @@ Write the date in place of the "Unreleased" in the case a new version is release
 
 ### Fixed
 
+- The interactive authentication-provider prompt crashed on non-numeric input, treated `0` as the last provider, and on Enter printed "Failed." but logged in with the last provider anyway. Enter now cancels with an error.
 - Fixed `ArrayClient.patch` on arrays whose shape is not a whole number of
   chunks. The check for writing past the end, and the new shape after
   `extend=True`, used the Zarr array's shape, which is rounded up to whole

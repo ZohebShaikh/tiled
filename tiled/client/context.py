@@ -70,20 +70,16 @@ def identity_provider_input(
             "Choose an authentication provider (or press Enter to cancel): "
         )
         if not raw_choice:
-            print("No authentication provider chosen. Failed.")
-            break
+            raise RuntimeError("No authentication provider chosen.")
         try:
             choice = int(raw_choice)
-        except TypeError:
+        except ValueError:
             print("Choice must be a number.")
             continue
-        try:
-            spec = providers[choice - 1]
-        except IndexError:
+        if not 1 <= choice <= len(providers):
             print(f"Choice must be a number 1 through {len(providers)}.")
             continue
-        break
-    return spec
+        return providers[choice - 1]
 
 
 def username_input():
