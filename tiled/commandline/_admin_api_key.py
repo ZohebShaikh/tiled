@@ -47,11 +47,13 @@ def create_api_key(
         # This is how typer interprets unspecified scopes.
         # Replace with None to get default scopes.
         scopes = None
-    if expires_in and expires_in.isdigit():
-        expires_in = int(expires_in)
+    # A bare number is seconds; otherwise a duration string like '7d'.
+    lifetime: int | str | None = (
+        int(expires_in) if expires_in and expires_in.isdigit() else expires_in
+    )
     info = context.admin.create_api_key(
         principal_uuid,
-        expires_in=expires_in,
+        expires_in=lifetime,
         scopes=scopes,
         access_tags=access_tags,
         note=note,

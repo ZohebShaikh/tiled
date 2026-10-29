@@ -1,6 +1,7 @@
 try:
     import click
     import typer
+    import typer.core
 except Exception as err:
     raise Exception(
         """
@@ -169,10 +170,17 @@ if __name__ == "__main__":
 
 # This object is used by the auto-generated documentation.
 _app_click = typer.main.get_command(cli_app)
+# An app with subcommands is always a group.
+assert isinstance(_app_click, typer.core.TyperGroup)
+_app_ctx = typer.Context(_app_click)
+# sphinx-click needs a real click.Group, but typer vendors its own click, so
+# the subcommands are typer-click objects that sphinx-click uses by duck typing.
 typer_click_object = click.Group(
     name=_app_click.name,
-    commands={
-        k: _app_click.get_command(None, k) for k in _app_click.list_commands(None)
+    commands={  # pyright: ignore[reportArgumentType]
+        k: command
+        for k in _app_click.list_commands(_app_ctx)
+        if (command := _app_click.get_command(_app_ctx, k)) is not None
     },
     callback=_app_click.callback,
     params=_app_click.params,

@@ -25,13 +25,15 @@ trees:
 tiled serve config config.yml
 """
 
-import io
+import tempfile
+from pathlib import Path
 
 import h5py
 import httpx2 as httpx
 import numpy as np
 
 from tiled.adapters.hdf5 import HDF5Adapter
+from tiled.utils import ensure_uri
 
 EXAMPLE_URL = "https://github.com/nexusformat/exampledata/blob/master/APS/EPICSareaDetector/hdf5/AgBehenate_228.hdf5?raw=true"
 
@@ -225,21 +227,18 @@ def simulated_nexus(file_handle):
 
 
 def build_tree(url=None):
+    # HDF5Adapter reads from files by URI, so stage the data in a file.
+    # ponytail: the temporary directory lives until the process exits.
+    path = Path(tempfile.mkdtemp(), "example.nxs")
     if url:
-        # Download a Nexus file into a memory buffer.
-        buffer = io.BytesIO(httpx.get(url, follow_redirects=True).content)
-        # Access the buffer with h5py, which can treat it like a "file".
-        file_handle = h5py.File(buffer, "r")
+        # Download a Nexus file.
+        path.write_bytes(httpx.get(url, follow_redirects=True).content)
     else:
-        # Create an in-memory Nexus file with the same structure as the example file.
-        buffer = io.BytesIO()
-        with h5py.File(buffer, "w") as f:
+        # Create a Nexus file with the same structure as the example file.
+        with h5py.File(path, "w") as f:
             simulated_nexus(f)
-        buffer.seek(0)  # Reset buffer position to the beginning
-        file_handle = h5py.File(buffer, "r")
 
-    # Wrap the h5py.File in a MapAdapter to serve it with Tiled.
-    return HDF5Adapter(file_handle)
+    return HDF5Adapter.from_uris(ensure_uri(path))
 
 
 tree = build_tree()
