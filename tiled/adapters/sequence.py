@@ -150,7 +150,7 @@ class FileSequenceAdapter(Adapter[ArrayStructure]):
         data_source: DataSource[ArrayStructure],
         node: Node,
         /,
-        **kwargs: Any | None,
+        **kwargs: Any,
     ) -> "FileSequenceAdapter":
         # One entry point for both the eager and lazy paths. The eager path
         # derives `data_uris` from the data source's assets (dense 0-based
@@ -382,6 +382,8 @@ class FileSequenceAdapter(Adapter[ArrayStructure]):
                     # Include the first dimension when further subslicing
                     arr = self.read(slice=left_axis)
                     the_rest.insert(0, builtins.slice(None))
+                else:
+                    raise TypeError(f"Unsupported slice {slice!r}")
 
                 sliced_shape = ndindex(left_axis).newshape(struct_shape)
                 arr = force_reshape(arr, sliced_shape)

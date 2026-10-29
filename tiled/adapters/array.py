@@ -5,14 +5,14 @@ from typing import Any, cast
 import dask.array
 import numpy
 import pandas
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from tiled.adapters.core import Adapter
 
 from ..ndslice import NDBlock, NDSlice
 from ..structures.array import ArrayStructure
 from ..structures.core import Spec, StructureFamily
-from ..type_aliases import JSON, Chunks
+from ..type_aliases import JSON, ArrayLikeObject, Chunks
 from .utils import force_reshape
 
 
@@ -35,7 +35,7 @@ class ArrayAdapter(Adapter[ArrayStructure]):
 
     def __init__(
         self,
-        array: NDArray[Any],
+        array: ArrayLikeObject,
         structure: ArrayStructure,
         *,
         metadata: JSON | None = None,
@@ -47,7 +47,7 @@ class ArrayAdapter(Adapter[ArrayStructure]):
     @classmethod
     def from_array(
         cls,
-        array: NDArray[Any],
+        array: ArrayLike,
         *,
         shape: tuple[int, ...] | None = None,
         chunks: Chunks | None = None,
@@ -56,12 +56,12 @@ class ArrayAdapter(Adapter[ArrayStructure]):
         specs: list[Spec] | None = None,
     ) -> "ArrayAdapter":
         # May be a list of something; convert to array
-        if not hasattr(array, "__array__"):
+        if not isinstance(array, ArrayLikeObject):
             array = numpy.asanyarray(array)
 
         # Convert array of arrays to ND array to expose the underlying dtype
         is_array_of_arrays = (
-            array.dtype == "object"
+            array.dtype == numpy.dtype(object)
             and array.shape[0]
             and isinstance(array[0], numpy.ndarray)
         )
@@ -72,7 +72,7 @@ class ArrayAdapter(Adapter[ArrayStructure]):
 
         # Convert (experimental) pandas.StringDtype to numpy's unicode string dtype
         is_likely_string_dtype = isinstance(array.dtype, pandas.StringDtype) or (
-            array.dtype == "object" and array.dtype.fields is None
+            array.dtype == numpy.dtype(object) and array.dtype.fields is None
         )
         if is_likely_string_dtype:
             array = numpy.array([str(x) for x in array])  # becomes "<Un" dtype
@@ -100,10 +100,10 @@ class ArrayAdapter(Adapter[ArrayStructure]):
     ) -> NDArray[Any]:
         array = force_reshape(self._array, self._structure.shape)
         # _array[...] requires an actual tuple, not just a subclass of tuple
-        array = array[tuple(slice)] if slice else array
-        if isinstance(self._array, dask.array.Array):
-            return array.compute()
-        return array
+        result = array[tuple(slice)] if slice else array
+        if isinstance(result, dask.array.Array):
+            return result.compute()
+        return numpy.asanyarray(result)
 
     def read_block(
         self,
@@ -114,9 +114,9 @@ class ArrayAdapter(Adapter[ArrayStructure]):
         array = force_reshape(self._array, self._structure.shape)
         slice_ = block.slice_from_chunks(self._structure.chunks)
         # _array[...] requires an actual tuple, not just a subclass of tuple
-        array = array[tuple(slice_)]
+        block_array = array[tuple(slice_)]
         # Slice within the block.
-        array = array[slice] if slice else array
-        if isinstance(self._array, dask.array.Array):
-            return array.compute()
-        return array
+        result = block_array[slice] if slice else block_array
+        if isinstance(result, dask.array.Array):
+            return result.compute()
+        return numpy.asanyarray(result)

@@ -1,9 +1,11 @@
 import copy
-from collections.abc import Set
+from collections.abc import Mapping, Set
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote_plus
 
 import awkward
+from numpy.typing import ArrayLike
 
 from ..catalog.orm import Node
 from ..storage import DirectoryContainer, FileStorage, Storage
@@ -22,7 +24,7 @@ class AwkwardAdapter(Adapter[AwkwardStructure]):
 
     def __init__(
         self,
-        container: dict[str, bytes],
+        container: Mapping[str, Any],
         structure: AwkwardStructure,
         *,
         metadata: JSON | None = None,
@@ -37,7 +39,7 @@ class AwkwardAdapter(Adapter[AwkwardStructure]):
     @classmethod
     def from_array(
         cls,
-        array: awkward.Array,
+        array: awkward.Array | ArrayLike,
         *,
         metadata: JSON | None = None,
         specs: list[Spec] | None = None,

@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 import dask.dataframe
@@ -28,7 +28,7 @@ class TableAdapter(Adapter[TableStructure]):
 
     def __init__(
         self,
-        partitions: dask.dataframe.DataFrame | pandas.DataFrame,
+        partitions: Iterable[dask.dataframe.DataFrame | pandas.DataFrame | None],
         structure: TableStructure,
         *,
         metadata: JSON | None = None,
@@ -126,7 +126,7 @@ class TableAdapter(Adapter[TableStructure]):
         if specs is None:
             specs = [Spec("dataframe")]
         return cls(
-            ddf.partitions,
+            [ddf.partitions[i] for i in range(ddf.npartitions)],
             structure,
             metadata=metadata,
             specs=specs,
@@ -149,36 +149,43 @@ class TableAdapter(Adapter[TableStructure]):
     def items(self) -> Iterator[tuple[str, ArrayAdapter]]:
         yield from ((key, self[key]) for key in self._structure.columns)
 
-    def read(
-        self, fields: list[str] | None = None
-    ) -> dask.dataframe.DataFrame | pandas.DataFrame:
-        if any(p is None for p in self._partitions):
+    def read(self, fields: list[str] | None = None) -> pandas.DataFrame:
+        partitions = [p for p in self._partitions if p is not None]
+        if len(partitions) < len(self._partitions):
             raise ValueError("Not all partitions have been stored.")
-        if isinstance(self._partitions[0], dask.dataframe.DataFrame):
+        if isinstance(partitions[0], dask.dataframe.DataFrame):
             if fields is not None:
-                ddf = dask.dataframe.concat(
-                    [p[fields] for p in self._partitions], axis=0
-                )
+                ddf = dask.dataframe.concat([p[fields] for p in partitions], axis=0)
             else:
-                ddf = dask.dataframe.concat(self._partitions, axis=0)
+                ddf = dask.dataframe.concat(partitions, axis=0)
             return ddf.compute()
-        df = pandas.concat(self._partitions, axis=0)
+        df = pandas.concat(
+            [
+                p.compute() if isinstance(p, dask.dataframe.DataFrame) else p
+                for p in partitions
+            ],
+            axis=0,
+        )
         if fields is not None:
             df = df[fields]
+            # Selecting with a list of columns always yields a DataFrame.
+            assert isinstance(df, pandas.DataFrame)
         return df
 
     def read_partition(
         self,
         partition: int,
         fields: list[str] | None = None,
-    ) -> pandas.DataFrame | dask.dataframe.DataFrame:
+    ) -> pandas.DataFrame:
         df = self._partitions[partition]
         if df is None:
             raise RuntimeError(f"Partition {partition} has not been stored yet.")
+        if isinstance(df, dask.dataframe.DataFrame):
+            return (df[fields] if fields is not None else df).compute()
         if fields is not None:
             df = df[fields]
-        if isinstance(df, dask.dataframe.DataFrame):
-            return df.compute()
+            # Selecting with a list of columns always yields a DataFrame.
+            assert isinstance(df, pandas.DataFrame)
         return df
 
 

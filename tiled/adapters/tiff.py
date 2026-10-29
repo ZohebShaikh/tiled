@@ -64,12 +64,12 @@ class TiffAdapter(Adapter[ArrayStructure]):
         data_source: DataSource[ArrayStructure],
         node: Node,
         /,
-        **kwargs: Any | None,
+        **kwargs: Any,
     ) -> "TiffAdapter":
         return init_adapter_from_catalog(cls, data_source, node, **kwargs)
 
     @classmethod
-    def from_uris(cls, data_uri: str, **kwargs: Any | None) -> "TiffAdapter":
+    def from_uris(cls, data_uri: str, **kwargs: Any) -> "TiffAdapter":
         return cls(data_uri)
 
     def metadata(self) -> JSON:
@@ -84,7 +84,7 @@ class TiffAdapter(Adapter[ArrayStructure]):
         # if we only want a slice? I do not think that is possible with a
         # single-page TIFF but I'm not sure. Certainly it *is* possible for
         # multi-page TIFFs.
-        arr = self._file.asarray()
+        arr: NDArray[Any] = self._file.asarray()
         arr = force_reshape(arr, self._structure.shape)
         return arr[slice] if slice else arr
 
@@ -96,7 +96,7 @@ class TiffAdapter(Adapter[ArrayStructure]):
         if sum(block) != 0:
             raise IndexError(block)
 
-        arr = self._file.asarray()
+        arr: NDArray[Any] = self._file.asarray()
         arr = force_reshape(arr, self._structure.shape)
         if slice is not None:
             arr = arr[slice]

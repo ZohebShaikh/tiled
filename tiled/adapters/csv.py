@@ -1,9 +1,10 @@
 import copy
-from collections.abc import Iterable, Iterator, Set
+from collections.abc import Hashable, Iterable, Iterator, Set
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus
 
+import dask.array
 import dask.dataframe
 import numpy
 import pandas
@@ -35,7 +36,7 @@ class CSVAdapter(Adapter[TableStructure]):
         *,
         metadata: JSON | None = None,
         specs: list[Spec] | None = None,
-        **kwargs: Any | None,
+        **kwargs: Any,
     ) -> None:
         """Adapter for partitioned tabular data stored as a sequence of text (csv) files
 
@@ -67,7 +68,7 @@ class CSVAdapter(Adapter[TableStructure]):
         data_source: DataSource[TableStructure],
         node: Node,
         /,
-        **kwargs: Any | None,
+        **kwargs: Any,
     ) -> "CSVAdapter":
         return init_adapter_from_catalog(cls, data_source, node, **kwargs)
 
@@ -75,7 +76,7 @@ class CSVAdapter(Adapter[TableStructure]):
     def from_uris(
         cls,
         *data_uris: str,
-        **kwargs: Any | None,
+        **kwargs: Any,
     ) -> "CSVAdapter":
         return cls(data_uris, **kwargs)
 
@@ -200,7 +201,7 @@ class CSVAdapter(Adapter[TableStructure]):
         # (pandas does not support the `assume_missing` parameter).
         if kwargs.pop("assume_missing", False):
             schema = self.structure().arrow_schema_decoded
-            dtypes = {
+            dtypes: dict[Hashable, Any] = {
                 indx: field.type.to_pandas_dtype() for indx, field in enumerate(schema)
             }
             df = pandas.read_csv(self._file_paths[indx], dtype=dtypes, **kwargs)
@@ -272,7 +273,7 @@ class CSVArrayAdapter(ArrayAdapter):
         data_source: DataSource[ArrayStructure],
         node: Node,
         /,
-        **kwargs: Any | None,
+        **kwargs: Any,
     ) -> "CSVArrayAdapter":
         """Adapter for partitioned array data stored as a sequence of csv files
 
@@ -331,7 +332,7 @@ class CSVArrayAdapter(ArrayAdapter):
     def from_uris(
         cls,
         *data_uris: str,
-        **kwargs: Any | None,
+        **kwargs: Any,
     ) -> "CSVArrayAdapter":
         tbl_adapter = CSVAdapter.from_uris(*data_uris, **{"header": None, **kwargs})
         tbl_structure = tbl_adapter.structure()
@@ -357,6 +358,29 @@ class CSVArrayAdapter(ArrayAdapter):
         true_shape, true_chunks = (sum(chunks_0), n_cols), (chunks_0, (n_cols,))
         true_dtype: BuiltinDtype | StructDtype
 
+        # Construct the array object
+        if not any(string_columns):
+            # Need to read the entire array, use dask for lazy loading and proper chunking
+            file_paths = [path_from_uri(uri) for uri in data_uris]
+            ddf = dask.dataframe.read_csv(file_paths, **{"header": None, **kwargs})
+
+            if usecols := kwargs.get("usecols"):
+                ddf = ddf[usecols]  # Ensure the order of columns is preserved
+
+            if is_structured:
+                array = ddf.to_records(lengths=chunks_0)[list(ddf.columns)].reshape(
+                    -1, 1
+                )
+            else:
+                array = ddf.to_dask_array(lengths=chunks_0)
+
+        else:
+            # We have already read the data into pandas DataFrame, convert to numpy
+            if is_structured:
+                array = df.to_records(index=False).reshape(true_shape)
+            else:
+                array = df.to_numpy().astype("<U").reshape(true_shape)
+
         if is_structured:
             # This is a table with heterogeneous column types; construct StructDtype
             _np_struct = []
@@ -371,33 +395,9 @@ class CSVArrayAdapter(ArrayAdapter):
                     _np_dtype = col_dtype.to_pandas_dtype()
                 _np_struct.append((col_name, _np_dtype))
             true_dtype = StructDtype.from_numpy_dtype(numpy.dtype(_np_struct))
-
-        # Construct the array object
-        if not any(string_columns):
-            # Need to read the entire array, use dask for lazy loading and proper chunking
-            file_paths = [path_from_uri(uri) for uri in data_uris]
-            ddf = dask.dataframe.read_csv(file_paths, **{"header": None, **kwargs})
-
-            if usecols := kwargs.get("usecols"):
-                ddf = ddf[usecols]  # Ensure the order of columns is preserved
-
-            if is_structured:
-                array = ddf.to_records(lengths=chunks_0)[list(ddf.columns)].reshape(
-                    -1, 1
-                )
-                array = array.astype(true_dtype.to_numpy_dtype())
-            else:
-                array = ddf.to_dask_array(lengths=chunks_0)
-                true_dtype = BuiltinDtype.from_numpy_dtype(array.dtype)
-
+            array = array.astype(true_dtype.to_numpy_dtype())
         else:
-            # We have already read the data into pandas DataFrame, convert to numpy
-            if is_structured:
-                array = df.to_records(index=False).reshape(true_shape)
-                array = array.astype(true_dtype.to_numpy_dtype())
-            else:
-                array = df.to_numpy().astype("<U").reshape(true_shape)
-                true_dtype = BuiltinDtype.from_numpy_dtype(array.dtype)
+            true_dtype = BuiltinDtype.from_numpy_dtype(array.dtype)
 
         # Define the structure with the correct dtype, shape, and chunking
         structure = ArrayStructure(

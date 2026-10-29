@@ -51,7 +51,7 @@ class ArrowAdapter(Adapter[TableStructure]):
         data_source: DataSource[TableStructure],
         node: Node,
         /,
-        **kwargs: Any | None,
+        **kwargs: Any,
     ) -> "ArrowAdapter":
         return init_adapter_from_catalog(cls, data_source, node, **kwargs)
 
@@ -212,7 +212,7 @@ class ArrowAdapter(Adapter[TableStructure]):
         ----------
         partition : int
             index of partition to be written.
-        data : list[pyarrow.RecordBatch] | pyarrow.RecordBatch | pandas.DataFrame
+        data : Union[List[pyarrow.RecordBatch], pyarrow.RecordBatch, pandas.DataFrame]
             data to write into arrow file.
         """
         if isinstance(data, pandas.DataFrame):
