@@ -17,9 +17,11 @@ pytest -c benchmarks/pytest.ini --codspeed benchmarks/bench_search.py -k eq
 
 Measurement is done by [pytest-codspeed](https://codspeed.io/docs/reference/pytest-codspeed),
 whose `benchmark` fixture is compatible with pytest-benchmark's. In CI
-(`.github/workflows/codspeed.yml`) the suite runs under CodSpeed's CPU
-simulation, which reports the change against the base branch on every pull
-request. Without `--codspeed`, each benchmark runs once, as a test.
+(`.github/workflows/codspeed.yml`) the suite runs under CodSpeed twice, and
+the change against the base branch is reported on every pull request: once
+in CPU simulation (deterministic, but it leaves out the time spent in system
+calls, i.e. waiting on PostgreSQL and on the server thread) and once in wall
+time (everything, with the noise of a shared runner). Without `--codspeed`, each benchmark runs once, as a test.
 
 ## Writing a benchmark
 
