@@ -1,5 +1,6 @@
 import collections.abc
 import dataclasses
+import functools
 import inspect
 import itertools
 import operator
@@ -477,6 +478,13 @@ async def construct_data_response(
     )
 
 
+@functools.cache
+def _resource_type(attributes, links, meta):
+    # Parametrizing a generic pydantic model is slow, even when pydantic has
+    # the result cached, and this is done for every entry of every page.
+    return schemas.Resource[attributes, links, meta]
+
+
 async def construct_resource(
     base_url,
     path_parts,
@@ -612,9 +620,9 @@ async def construct_resource(
                 path_str,
             )
 
-        resource = schemas.Resource[
+        resource = _resource_type(
             schemas.NodeAttributes, schemas.ContainerLinks, schemas.ContainerMeta
-        ](**d)
+        )(**d)
     else:
         links = {"self": f"{base_url}/metadata/{path_str}"}
         if entry is not None:
@@ -645,9 +653,9 @@ async def construct_resource(
         }
         if not omit_links:
             d["links"] = links
-        resource = schemas.Resource[
+        resource = _resource_type(
             schemas.NodeAttributes, ResourceLinksT, schemas.EmptyDict
-        ](**d)
+        )(**d)
     return resource
 
 
