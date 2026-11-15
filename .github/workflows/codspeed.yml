@@ -23,8 +23,18 @@ permissions:
 
 jobs:
   benchmarks:
-    name: Run benchmarks
+    name: Run benchmarks (${{ matrix.mode }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every benchmark drives a server (on another thread) backed by
+        # PostgreSQL, so most of its time is spent blocked in system calls,
+        # which the CPU simulation leaves out. `walltime` measures them, with
+        # the noise of a shared runner (CodSpeed Macro Runners, which remove
+        # it, need a GitHub organization); `simulation` is deterministic but
+        # counts only the CPU work of the Python process.
+        mode: [simulation, walltime]
     steps:
     - name: Checkout
       uses: actions/checkout@v7
@@ -50,5 +60,5 @@ jobs:
       env:
         TILED_TEST_POSTGRESQL_URI: postgresql://postgres:secret@localhost:5432
       with:
-        mode: simulation
+        mode: ${{ matrix.mode }}
         run: uv run pytest -c benchmarks/pytest.ini --codspeed
