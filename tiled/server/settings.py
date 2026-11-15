@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import Field
 from pydantic.dataclasses import dataclass
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from starlette.requests import HTTPConnection
 
 
 # hashable cache key for use in tiled.server.connection_pool
@@ -66,3 +67,21 @@ class Settings(BaseSettings):
 @cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def get_app_settings(request: HTTPConnection) -> Settings:
+    """
+    Dependency: the settings of the app serving this request.
+
+    `build_app` keeps them on `app.state` rather than registering them in
+    `app.dependency_overrides` because, when any override is registered,
+    FastAPI re-inspects the signature of every dependency on every request.
+
+    An override of `get_settings` is still honored, and an app that was not
+    made by `build_app` gets the default settings.
+    """
+    app = request.app
+    override = getattr(app, "dependency_overrides", {}).get(get_settings)
+    if override is not None:
+        return override()
+    return getattr(app.state, "get_settings", get_settings)()

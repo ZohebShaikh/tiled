@@ -811,9 +811,7 @@ class Context:
             if not context.server_info.authentication.providers:
                 # This is a single-user server.
                 # Extract the API key from the app and set it.
-                from ..server.settings import get_settings
-
-                settings = app.dependency_overrides[get_settings]()
+                settings = app.state.get_settings()
                 api_key = settings.single_user_api_key or None
             else:
                 # This is a multi-user server but no API key was passed,

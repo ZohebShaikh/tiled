@@ -544,8 +544,8 @@ def build_app(
 
     # The Tree and Authenticator have the opportunity to add custom routes to
     # the server here. (Just for example, a Tree of BlueskyRuns uses this
-    # hook to add a /documents route.) This has to be done before dependency_overrides
-    # are processed, so we cannot just inject this configuration via Depends.
+    # hook to add a /documents route.) This has to be done while the app is being
+    # built, so we cannot just inject this configuration via Depends.
     # Ensure that routers are only included once.
     for custom_router in (include_routers or []) + getattr(tree, "include_routers", []):
         app.include_router(custom_router, prefix="/custom")
@@ -598,7 +598,7 @@ def build_app(
     app.state.root_tree = tree
 
     @cache
-    def override_get_settings():
+    def app_settings():
         settings = get_settings()
         for item in [
             "allow_anonymous_access",
@@ -656,7 +656,7 @@ def build_app(
 
         logger.info(f"Tiled version {__version__}")
         # Validate the single-user API key.
-        settings: Settings = app.dependency_overrides[get_settings]()
+        settings: Settings = app_settings()
         single_user_api_key = settings.single_user_api_key
         API_KEY_MSG = dedent(
             """
@@ -957,7 +957,7 @@ def build_app(
             task.cancel()
         await asyncio.gather(*running_tasks, return_exceptions=True)
 
-        settings: Settings = app.dependency_overrides[get_settings]()
+        settings: Settings = app_settings()
         if settings.database_settings.uri is not None:
             from .connection_pool import close_database_connection_pool
 
@@ -969,7 +969,17 @@ def build_app(
         minimum_size=1000,
     )
 
-    @app.middleware("http")
+    # The function-style HTTP middlewares below are collected here, innermost
+    # first, and run by one BaseHTTPMiddleware (`run_http_middlewares`)
+    # rather than one each: every BaseHTTPMiddleware layer costs a task group
+    # and a pair of memory streams per request.
+    http_middlewares = []
+
+    def http_middleware(func):
+        http_middlewares.append(func)
+        return func
+
+    @http_middleware
     async def double_submit_cookie_csrf_protection(
         request: Request, call_next: RequestResponseEndpoint
     ):
@@ -1010,7 +1020,7 @@ def build_app(
             )
         return response
 
-    @app.middleware("http")
+    @http_middleware
     async def client_compatibility_check(
         request: Request, call_next: RequestResponseEndpoint
     ):
@@ -1043,7 +1053,7 @@ def build_app(
         response = await call_next(request)
         return response
 
-    @app.middleware("http")
+    @http_middleware
     async def set_cookies(request: Request, call_next: RequestResponseEndpoint):
         "This enables dependencies to inject cookies that they want to be set."
         # Create some Request state, to be (possibly) populated by dependencies.
@@ -1056,9 +1066,9 @@ def build_app(
         return response
 
     app.openapi = partial(custom_openapi, app)
-    app.dependency_overrides[get_settings] = override_get_settings
+    app.state.get_settings = app_settings
 
-    @app.middleware("http")
+    @http_middleware
     async def capture_metrics(request: Request, call_next: RequestResponseEndpoint):
         """
         Place metrics in Server-Timing header, in accordance with HTTP spec.
@@ -1116,7 +1126,7 @@ def build_app(
 
         app.include_router(get_metrics_router(), prefix="/api/v1")
 
-        @app.middleware("http")
+        @http_middleware
         async def capture_metrics_prometheus(
             request: Request, call_next: RequestResponseEndpoint
         ):
@@ -1137,7 +1147,7 @@ def build_app(
             # An exception above would have triggered an early exit.
             return response
 
-    @app.middleware("http")
+    @http_middleware
     async def current_principal_logging_filter(
         request: Request, call_next: RequestResponseEndpoint
     ):
@@ -1146,6 +1156,14 @@ def build_app(
         response = await call_next(request)
         current_principal.set(request.state.principal)
         return response
+
+    @app.middleware("http")
+    async def run_http_middlewares(
+        request: Request, call_next: RequestResponseEndpoint
+    ):
+        for middleware in http_middlewares:
+            call_next = partial(middleware, call_next=call_next)
+        return await call_next(request)
 
     app.add_middleware(
         CorrelationIdMiddleware,

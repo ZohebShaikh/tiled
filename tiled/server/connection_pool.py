@@ -8,7 +8,7 @@ from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.pool import AsyncAdaptedQueuePool, StaticPool
 
-from ..server.settings import DatabaseSettings, Settings, get_settings
+from ..server.settings import DatabaseSettings, Settings, get_app_settings
 from ..utils import ensure_specified_sql_driver, safe_json_dump, sanitize_uri
 from .metrics import monitor_db_pool
 
@@ -61,7 +61,7 @@ async def close_database_connection_pool(database_settings: DatabaseSettings):
 
 
 def get_database_engine(
-    settings: Settings | DatabaseSettings = Depends(get_settings),
+    settings: Settings | DatabaseSettings = Depends(get_app_settings),
 ) -> AsyncEngine:
     database_settings = (
         settings.database_settings if isinstance(settings, Settings) else settings
