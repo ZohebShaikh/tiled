@@ -1,5 +1,7 @@
 # Tiled
 
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/ZohebShaikh/tiled?utm_source=badge)
+
 Tiled is a service that enables **secure, structured** access to **scientific
 data**. It supports **search**, remote **slicing**, **format** conversion, and
 live **streaming**.
