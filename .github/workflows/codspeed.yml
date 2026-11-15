@@ -1,0 +1,54 @@
+name: CodSpeed
+
+# Runs the benchmark suite (benchmarks/) under CodSpeed, which reports the
+# change in performance on pull requests against the base branch.
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches:
+    - main
+    - ZohebShaikh/codespeed  # baseline for the optimization PR
+  pull_request:
+  # `workflow_dispatch` allows CodSpeed to trigger backtest
+  # performance analysis in order to generate initial data.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write  # for OpenID Connect authentication with CodSpeed
+
+jobs:
+  benchmarks:
+    name: Run benchmarks
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+      with:
+        fetch-depth: 0  # get full history for `git describe` to produce version
+
+    - name: Install uv and set the python version
+      uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+      with:
+        python-version: "3.13"
+
+    - name: Install tiled
+      run: uv sync --all-extras --locked
+      env:
+        TILED_BUILD_SKIP_UI: 1
+
+    - name: Start PostgreSQL service in container.
+      shell: bash -l {0}
+      run: source continuous_integration/scripts/start_postgres.sh
+
+    - name: Run benchmarks
+      uses: CodSpeedHQ/action@af75f77f17a054769abefaa42fe8dc2975469b5f  # v5.6.3
+      env:
+        TILED_TEST_POSTGRESQL_URI: postgresql://postgres:secret@localhost:5432
+      with:
+        mode: simulation
+        run: uv run pytest -c benchmarks/pytest.ini --codspeed

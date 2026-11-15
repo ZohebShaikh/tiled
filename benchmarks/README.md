@@ -11,21 +11,15 @@ its own.
 
 ```bash
 export TILED_TEST_POSTGRESQL_URI=postgresql://postgres:secret@localhost:5432
-pytest -c benchmarks/pytest.ini                       # all, about 3 minutes
-pytest -c benchmarks/pytest.ini benchmarks/bench_search.py -k eq
+pytest -c benchmarks/pytest.ini --codspeed            # all, about 5 minutes
+pytest -c benchmarks/pytest.ini --codspeed benchmarks/bench_search.py -k eq
 ```
 
-To compare two states of the code, save the first run and compare the second
-with it:
-
-```bash
-pytest -c benchmarks/pytest.ini --benchmark-save=before
-# ... change the code ...
-pytest -c benchmarks/pytest.ini --benchmark-compare=0001_before
-```
-
-See [pytest-benchmark](https://pytest-benchmark.readthedocs.io/) for the
-other options, e.g. `--benchmark-histogram`.
+Measurement is done by [pytest-codspeed](https://codspeed.io/docs/reference/pytest-codspeed),
+whose `benchmark` fixture is compatible with pytest-benchmark's. In CI
+(`.github/workflows/codspeed.yml`) the suite runs under CodSpeed's CPU
+simulation, which reports the change against the base branch on every pull
+request. Without `--codspeed`, each benchmark runs once, as a test.
 
 ## Writing a benchmark
 
@@ -56,5 +50,5 @@ The populated catalog that benchmarks run against is described in
 benchmark must not change the size of its collections: write under
 `scratch`, and read anywhere.
 
-Keep a benchmark's name stable: the dashboard identifies a series by it, and a
+Keep a benchmark's name stable: CodSpeed identifies a series by it, and a
 renamed benchmark starts a new series.
