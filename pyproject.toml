@@ -300,7 +300,8 @@ test = [
     "python3-saml",
     "types-cachetools",
     "pytest-cov",
-    "pytest-xdist"
+    "pytest-xdist",
+    "pytest-codspeed>=5.0.4",
 ]
 dev = [
   { include-group = "test" },
