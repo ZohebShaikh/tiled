@@ -656,7 +656,7 @@ def build_app(
 
         logger.info(f"Tiled version {__version__}")
         # Validate the single-user API key.
-        settings: Settings = app.dependency_overrides[get_settings]()
+        settings: Settings = override_get_settings()
         single_user_api_key = settings.single_user_api_key
         API_KEY_MSG = dedent(
             """
@@ -957,7 +957,7 @@ def build_app(
             task.cancel()
         await asyncio.gather(*running_tasks, return_exceptions=True)
 
-        settings: Settings = app.dependency_overrides[get_settings]()
+        settings: Settings = override_get_settings()
         if settings.database_settings.uri is not None:
             from .connection_pool import close_database_connection_pool
 
@@ -1056,7 +1056,7 @@ def build_app(
         return response
 
     app.openapi = partial(custom_openapi, app)
-    app.dependency_overrides[get_settings] = override_get_settings
+    app.state.get_settings = override_get_settings
 
     @app.middleware("http")
     async def capture_metrics(request: Request, call_next: RequestResponseEndpoint):

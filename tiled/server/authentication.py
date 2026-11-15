@@ -67,7 +67,7 @@ from .connection_pool import get_database_session_factory
 from .core import json_or_msgpack
 from .dependencies import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from .protocols import ExternalAuthenticator, InternalAuthenticator, UserSessionState
-from .settings import Settings, get_settings
+from .settings import Settings, get_app_settings
 from .utils import API_KEY_COOKIE_NAME, get_base_url
 
 ALGORITHM = "HS256"
@@ -222,7 +222,7 @@ async def get_decoded_access_token(
     request: Request,
     security_scopes: SecurityScopes,
     access_token: str = Depends(oauth2_scheme),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_app_settings),
 ):
     if not access_token:
         return None
@@ -335,7 +335,7 @@ def get_decoded_access_token_websocket(
     websocket: WebSocket,
     access_token: str | None = Query(None),
     authorization: Annotated[str | None, Header()] = None,
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_app_settings),
 ) -> dict | None:
     """Decode a JWT access token from a WebSocket handshake.
 
@@ -449,7 +449,7 @@ async def get_current_scopes(
     request: Request,
     decoded_access_token: dict[str, Any] | None = Depends(get_decoded_access_token),
     api_key: str | None = Depends(get_api_key),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_app_settings),
     db_factory: Callable[[], AsyncSession | None] = Depends(
         get_database_session_factory
     ),
@@ -487,7 +487,7 @@ async def get_current_scopes_websocket(
     websocket: WebSocket,
     api_key: str | None = Depends(get_api_key_websocket),
     decoded_access_token: dict | None = Depends(get_decoded_access_token_websocket),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_app_settings),
     db_factory: Callable[[], AsyncSession | None] = Depends(
         get_database_session_factory
     ),
@@ -589,7 +589,7 @@ async def check_scopes(
     request: Request,
     security_scopes: SecurityScopes,
     scopes: set[str] = Depends(get_current_scopes),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_app_settings),
 ) -> None:
     # Authorization is enforced per-endpoint: the request must carry the scopes
     # that this specific endpoint requires (`security_scopes`).
@@ -658,7 +658,7 @@ async def get_current_principal_websocket(
     access_token: str | None = Query(None),
     authorization: Annotated[str | None, Header()] = None,
     decoded_access_token: dict | None = Depends(get_decoded_access_token_websocket),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_app_settings),
     db_factory: Callable[[], AsyncSession | None] = Depends(
         get_database_session_factory
     ),
@@ -721,7 +721,7 @@ async def get_current_principal(
     access_token: str = Depends(oauth2_scheme),
     decoded_access_token: str = Depends(get_decoded_access_token),
     api_key: str = Depends(get_api_key),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_app_settings),
     db_factory: Callable[[], AsyncSession | None] = Depends(
         get_database_session_factory
     ),
@@ -947,7 +947,7 @@ def add_external_routes(
     async def auth_code_route(
         request: Request,
         response: Response,
-        settings: Settings = Depends(get_settings),
+        settings: Settings = Depends(get_app_settings),
         db_factory: Callable[[], AsyncSession | None] = Depends(
             get_database_session_factory
         ),
@@ -1072,7 +1072,7 @@ def add_external_routes(
         request: Request,
         code: str = Form(),
         user_code: str = Form(),
-        settings: Settings = Depends(get_settings),
+        settings: Settings = Depends(get_app_settings),
         db_factory: Callable[[], AsyncSession | None] = Depends(
             get_database_session_factory
         ),
@@ -1137,7 +1137,7 @@ def add_external_routes(
     async def device_code_token_route(
         request: Request,
         body: schemas.DeviceCode,
-        settings: Settings = Depends(get_settings),
+        settings: Settings = Depends(get_app_settings),
         db_factory: Callable[[], AsyncSession | None] = Depends(
             get_database_session_factory
         ),
@@ -1181,7 +1181,7 @@ def add_internal_routes(
     async def handle_credentials_route(
         request: Request,
         form_data: OAuth2PasswordRequestForm = Depends(),
-        settings: Settings = Depends(get_settings),
+        settings: Settings = Depends(get_app_settings),
         db_factory: Callable[[], AsyncSession | None] = Depends(
             get_database_session_factory
         ),
@@ -1461,7 +1461,7 @@ def authentication_router() -> APIRouter:
     async def refresh_session(
         request: Request,
         refresh_token: schemas.RefreshToken,
-        settings: Settings = Depends(get_settings),
+        settings: Settings = Depends(get_app_settings),
         db_factory: Callable[[], AsyncSession | None] = Depends(
             get_database_session_factory
         ),
@@ -1476,7 +1476,7 @@ def authentication_router() -> APIRouter:
     async def revoke_session(
         request: Request,
         refresh_token: schemas.RefreshToken,
-        settings: Settings = Depends(get_settings),
+        settings: Settings = Depends(get_app_settings),
         db_factory: Callable[[], AsyncSession | None] = Depends(
             get_database_session_factory
         ),
