@@ -5,7 +5,9 @@ name: CodSpeed
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Do not cancel runs on main: every commit there needs a run, as the
+  # baseline of the pull requests based on it.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 on:
   push:
@@ -35,6 +37,19 @@ jobs:
         # it, need a GitHub organization); `simulation` is deterministic but
         # counts only the CPU work of the Python process.
         mode: [simulation, walltime]
+    services:
+      postgres:
+        image: docker.io/postgres:16
+        env:
+          POSTGRES_PASSWORD: secret
+        ports:
+        - 5432:5432
+        # The job starts once the server accepts connections.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     steps:
     - name: Checkout
       uses: actions/checkout@v7
@@ -50,10 +65,6 @@ jobs:
       run: uv sync --all-extras --locked
       env:
         TILED_BUILD_SKIP_UI: 1
-
-    - name: Start PostgreSQL service in container.
-      shell: bash -l {0}
-      run: source continuous_integration/scripts/start_postgres.sh
 
     - name: Run benchmarks
       uses: CodSpeedHQ/action@af75f77f17a054769abefaa42fe8dc2975469b5f  # v5.6.3
