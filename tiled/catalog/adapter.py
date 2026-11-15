@@ -45,7 +45,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB, REGCONFIG, TEXT
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased, selectinload
+from sqlalchemy.orm import aliased, joinedload, selectinload
 from sqlalchemy.sql.expression import cast as sql_cast
 from sqlalchemy.sql.sqltypes import MatchType
 from starlette.status import (
@@ -707,12 +707,15 @@ class CatalogNodeAdapter:
 
         statement = node_from_segments(segments, root_id=self.node.id)
         statement = self.apply_conditions(statement)  # Conditions on the child node
+        # Load the node with its data sources and access tags in one query,
+        # rather than one "selectin" query for each: this runs on every request.
         statement = statement.options(
-            selectinload(orm.Node.data_sources).selectinload(orm.DataSource.structure)
+            joinedload(orm.Node.data_sources).joinedload(orm.DataSource.structure),
+            joinedload(orm.Node.access_tags),
         )
 
         async with self.context.session() as db:
-            node = (await db.execute(statement)).scalar()
+            node = (await db.execute(statement)).unique().scalars().first()
         if node is None:
             # Maybe the node does not exist, or maybe we have jumped _inside_ a file
             # whose internal contents are not indexed.
