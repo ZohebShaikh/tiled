@@ -707,11 +707,13 @@ class CatalogNodeAdapter:
 
         statement = node_from_segments(segments, root_id=self.node.id)
         statement = self.apply_conditions(statement)  # Conditions on the child node
-        # Load the node with its data sources and access tags in one query,
-        # rather than one "selectin" query for each: this runs on every request.
+        # Load the node with its data sources in one query, rather than in a
+        # "selectin" query of their own: this runs on every request. The
+        # access tags stay in their "selectin" query: joining a second
+        # collection would repeat the node (with its metadata) for every
+        # combination of data source and tag.
         statement = statement.options(
-            joinedload(orm.Node.data_sources).joinedload(orm.DataSource.structure),
-            joinedload(orm.Node.access_tags),
+            joinedload(orm.Node.data_sources).joinedload(orm.DataSource.structure)
         )
 
         async with self.context.session() as db:

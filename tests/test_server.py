@@ -244,3 +244,25 @@ async def test_background_tasks_stop_before_database_pool_closes(monkeypatch):
 
     assert purge_tasks, "The purge task never ran."
     assert tasks_done_when_pool_closed == [True]
+
+
+def test_get_app_settings():
+    "Settings come from app.state, a dependency override, or the defaults."
+    from types import SimpleNamespace
+
+    from fastapi import FastAPI
+
+    from tiled.server.settings import Settings, get_app_settings, get_settings
+
+    app = FastAPI()
+    request = SimpleNamespace(app=app)
+    # An app that was not made by build_app gets the default settings.
+    assert get_app_settings(request) is get_settings()
+    # build_app keeps the settings of the app on app.state.
+    from_state = Settings()
+    app.state.get_settings = lambda: from_state
+    assert get_app_settings(request) is from_state
+    # The FastAPI override idiom takes precedence.
+    overridden = Settings()
+    app.dependency_overrides[get_settings] = lambda: overridden
+    assert get_app_settings(request) is overridden

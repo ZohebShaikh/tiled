@@ -544,8 +544,8 @@ def build_app(
 
     # The Tree and Authenticator have the opportunity to add custom routes to
     # the server here. (Just for example, a Tree of BlueskyRuns uses this
-    # hook to add a /documents route.) This has to be done before dependency_overrides
-    # are processed, so we cannot just inject this configuration via Depends.
+    # hook to add a /documents route.) This has to be done while the app is being
+    # built, so we cannot just inject this configuration via Depends.
     # Ensure that routers are only included once.
     for custom_router in (include_routers or []) + getattr(tree, "include_routers", []):
         app.include_router(custom_router, prefix="/custom")
@@ -598,7 +598,7 @@ def build_app(
     app.state.root_tree = tree
 
     @cache
-    def override_get_settings():
+    def app_settings():
         settings = get_settings()
         for item in [
             "allow_anonymous_access",
@@ -656,7 +656,7 @@ def build_app(
 
         logger.info(f"Tiled version {__version__}")
         # Validate the single-user API key.
-        settings: Settings = override_get_settings()
+        settings: Settings = app_settings()
         single_user_api_key = settings.single_user_api_key
         API_KEY_MSG = dedent(
             """
@@ -957,7 +957,7 @@ def build_app(
             task.cancel()
         await asyncio.gather(*running_tasks, return_exceptions=True)
 
-        settings: Settings = override_get_settings()
+        settings: Settings = app_settings()
         if settings.database_settings.uri is not None:
             from .connection_pool import close_database_connection_pool
 
@@ -1066,7 +1066,7 @@ def build_app(
         return response
 
     app.openapi = partial(custom_openapi, app)
-    app.state.get_settings = override_get_settings
+    app.state.get_settings = app_settings
 
     @http_middleware
     async def capture_metrics(request: Request, call_next: RequestResponseEndpoint):
