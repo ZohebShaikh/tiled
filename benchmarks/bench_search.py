@@ -40,7 +40,7 @@ def bench_search_eq_nested(benchmark, container):
 
 
 def bench_search_comparison(benchmark, container):
-    "Range query, matching a tenth of the nodes (not indexable)."
+    "Range query, matching 100 nodes (not indexable)."
     benchmark(lambda: first_page(container.search(Comparison("lt", "number", 100))))
 
 
@@ -63,7 +63,7 @@ def bench_search_count(benchmark, container):
 
 
 def bench_search_deep(benchmark, client):
-    "Search all 1364 nodes of the tree for the 4 at level 1 with index 0."
+    "Search all 1364 nodes of the tree for the 256 leaves with index 0."
     tree = client["tree"]
     benchmark(
         lambda: list(tree.search_deep(Key("level") == 1, Key("index") == 0).keys())
@@ -71,5 +71,6 @@ def bench_search_deep(benchmark, client):
 
 
 def bench_paginate_all(benchmark, client):
-    "Walk every page of the SMALL container's keys, 100 per page."
-    benchmark(lambda: list(client["small"].keys().page_size(100)))
+    "Walk every page of the SMALL container's keys, 50 per page."
+    # Half the default page size; `bench_list_keys` covers the default.
+    benchmark(lambda: list(client["small"].keys().page_size(50)))

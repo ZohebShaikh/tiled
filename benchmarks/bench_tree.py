@@ -52,7 +52,7 @@ def bench_create_tree(benchmark, scratch):
 
 
 def bench_delete_subtree(benchmark, scratch):
-    "Recursively delete a 120-node subtree with 27 small arrays at the leaves."
+    "Recursively delete a subtree of 40 containers and 27 small arrays."
 
     def make_subtree():
         root = scratch.create_container(key=f"del_{next(counter)}")

@@ -16,7 +16,7 @@ def table(client):
 
 
 def bench_lookup(benchmark, client):
-    "Fetch one node by key (one metadata request)."
+    "Fetch one node by key (two requests: the container, then the node)."
     benchmark(lambda: client["small"]["node_000500"])
 
 
